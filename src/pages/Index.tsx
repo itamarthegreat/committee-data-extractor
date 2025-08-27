@@ -9,6 +9,8 @@ import FileUpload from '@/components/FileUpload';
 import ApiKeyInput from '@/components/ApiKeyInput';
 import ProcessingResults from '@/components/ProcessingResults';
 import { ProcessedDocument } from '@/types/document';
+import OpenAI from 'openai';
+import pdf from 'pdf-parse';
 
 const Index = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -47,11 +49,16 @@ const Index = () => {
     }
 
     setIsProcessing(true);
-    setResults([]); // Clear previous results
+    setResults([]);
     
     toast({
       title: "מתחיל עיבוד",
       description: `מעבד ${files.length} קבצים...`
+    });
+
+    const openai = new OpenAI({
+      apiKey: apiKey,
+      dangerouslyAllowBrowser: true
     });
 
     try {
@@ -74,46 +81,127 @@ const Index = () => {
       }));
       
       setResults(processingResults);
+
+      // Process each file with OpenAI
+      const processedResults = await Promise.all(
+        files.map(async (file, index) => {
+          try {
+            // Extract text from PDF
+            const arrayBuffer = await file.arrayBuffer();
+            const pdfData = await pdf(Buffer.from(arrayBuffer));
+            const pdfText = pdfData.text;
+
+            console.log(`Extracted text from ${file.name}:`, pdfText.substring(0, 500));
+
+            // Create prompt for OpenAI
+            const prompt = `
+אתה עוזר AI המתמחה בעיבוד מסמכי ועדות רפואיות ישראליות. 
+עליך לחלץ נתונים ממסמך הועדה הרפואית הבא ולהחזיר אותם בפורמט JSON מובנה.
+
+טקסט המסמך:
+${pdfText}
+
+אנא חלץ את הנתונים הבאים והחזר אותם בפורמט JSON:
+
+{
+  "committeeType": "סוג הועדה (למשל: ועדה רפואית)",
+  "committeeDate": "תאריך הועדה (YYYY-MM-DD)",
+  "committeeBranch": "סניף הועדה",
+  "insuredName": "שם המבוטח",
+  "idNumber": "מספר זהות",
+  "injuryDate": "תאריך הפגיעה",
+  "committeeMembers": [
+    {"name": "שם החבר", "role": "תפקיד"}
+  ],
+  "diagnoses": [
+    {"code": "קוד אבחנה", "description": "תיאור האבחנה"}
+  ],
+  "decisionTable": [
+    {"item": "פריט", "decision": "החלטה", "percentage": אחוז_מספרי, "notes": "הערות"}
+  ],
+  "disabilityWeightTable": [
+    {"bodyPart": "איבר", "percentage": אחוז_מספרי, "type": "סוג", "calculation": "חישוב"}
+  ]
+}
+
+חשוב: החזר רק את ה-JSON ללא טקסט נוסף.`;
+
+            const completion = await openai.chat.completions.create({
+              model: "gpt-4o-mini",
+              messages: [{ role: "user", content: prompt }],
+              temperature: 0.1,
+            });
+
+            const content = completion.choices[0].message.content;
+            console.log(`OpenAI response for ${file.name}:`, content);
+
+            let extractedData;
+            try {
+              extractedData = JSON.parse(content || '{}');
+            } catch (parseError) {
+              console.error('JSON parse error:', parseError);
+              throw new Error('תגובה לא תקינה מ-OpenAI');
+            }
+
+            return {
+              fileName: file.name,
+              committeeType: extractedData.committeeType || 'לא זוהה',
+              committeeDate: extractedData.committeeDate || '',
+              committeeBranch: extractedData.committeeBranch || 'לא זוהה',
+              insuredName: extractedData.insuredName || 'לא זוהה',
+              idNumber: extractedData.idNumber || '',
+              injuryDate: extractedData.injuryDate || '',
+              committeeMembers: extractedData.committeeMembers || [],
+              diagnoses: extractedData.diagnoses || [],
+              decisionTable: extractedData.decisionTable || [],
+              disabilityWeightTable: extractedData.disabilityWeightTable || [],
+              processingStatus: 'completed' as const,
+            };
+
+          } catch (fileError) {
+            console.error(`Error processing file ${file.name}:`, fileError);
+            return {
+              fileName: file.name,
+              committeeType: '',
+              committeeDate: '',
+              committeeBranch: '',
+              insuredName: '',
+              idNumber: '',
+              injuryDate: '',
+              committeeMembers: [],
+              diagnoses: [],
+              decisionTable: [],
+              disabilityWeightTable: [],
+              processingStatus: 'error' as const,
+              errorMessage: `שגיאה בעיבוד הקובץ: ${fileError.message}`,
+            };
+          }
+        })
+      );
+
+      setResults(processedResults);
+      setIsProcessing(false);
       
-      // Simulate processing with actual results
-      setTimeout(() => {
-        const completedResults: ProcessedDocument[] = files.map(file => ({
-          fileName: file.name,
-          committeeType: 'ועדה רפואית',
-          committeeDate: '2025-08-27',
-          committeeBranch: 'מרכז',
-          insuredName: 'שם המבוטח',
-          idNumber: '123456789',
-          injuryDate: '2025-01-01',
-          committeeMembers: [
-            { name: 'ד"ר יוסי כהן', role: 'יו"ר הועדה' },
-            { name: 'ד"ר מירי לוי', role: 'חבר ועדה' }
-          ],
-          diagnoses: [
-            { code: 'M25.9', description: 'פגיעה בברך' },
-            { code: 'M79.1', description: 'כאבי שרירים' }
-          ],
-          decisionTable: [
-            { item: 'נכות רפואית', decision: 'מוכר', percentage: 15, notes: 'בברך ימין' }
-          ],
-          disabilityWeightTable: [
-            { bodyPart: 'ברך ימין', percentage: 15, type: 'רפואי', calculation: '15% מלא' }
-          ],
-          processingStatus: 'completed' as const,
-        }));
-        
-        setResults(completedResults);
-        setIsProcessing(false);
-        
-        toast({
-          title: "העיבוד הושלם בהצלחה",
-          description: `עובדו ${files.length} קבצים`
-        });
-      }, 3000);
+      const successCount = processedResults.filter(r => r.processingStatus === 'completed').length;
+      const errorCount = processedResults.filter(r => r.processingStatus === 'error').length;
+      
+      toast({
+        title: "העיבוד הושלם",
+        description: `בוצע בהצלחה: ${successCount} קבצים${errorCount > 0 ? `, שגיאות: ${errorCount}` : ''}`,
+        variant: errorCount > 0 ? "destructive" : "default"
+      });
       
     } catch (error) {
       console.error('Processing error:', error);
       setIsProcessing(false);
+      
+      // Update all results to error status
+      setResults(prev => prev.map(result => ({
+        ...result,
+        processingStatus: 'error' as const,
+        errorMessage: 'שגיאה כללית בעיבוד'
+      })));
+      
       toast({
         title: "שגיאה בעיבוד",
         description: "אירעה שגיאה בעת עיבוד הקבצים",
