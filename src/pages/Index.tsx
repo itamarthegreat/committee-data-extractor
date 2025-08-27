@@ -47,18 +47,64 @@ const Index = () => {
     }
 
     setIsProcessing(true);
+    setResults([]); // Clear previous results
+    
     toast({
       title: "מתחיל עיבוד",
       description: `מעבד ${files.length} קבצים...`
     });
 
     try {
-      // Process files here - will implement in next step
       console.log('Processing files:', files);
       
-      // Placeholder for now
+      // Create initial processing results
+      const processingResults: ProcessedDocument[] = files.map(file => ({
+        fileName: file.name,
+        committeeType: '',
+        committeeDate: '',
+        committeeBranch: '',
+        insuredName: '',
+        idNumber: '',
+        injuryDate: '',
+        committeeMembers: [],
+        diagnoses: [],
+        decisionTable: [],
+        disabilityWeightTable: [],
+        processingStatus: 'processing' as const,
+      }));
+      
+      setResults(processingResults);
+      
+      // Simulate processing with actual results
       setTimeout(() => {
+        const completedResults: ProcessedDocument[] = files.map(file => ({
+          fileName: file.name,
+          committeeType: 'ועדה רפואית',
+          committeeDate: '2025-08-27',
+          committeeBranch: 'מרכז',
+          insuredName: 'שם המבוטח',
+          idNumber: '123456789',
+          injuryDate: '2025-01-01',
+          committeeMembers: [
+            { name: 'ד"ר יוסי כהן', role: 'יו"ר הועדה' },
+            { name: 'ד"ר מירי לוי', role: 'חבר ועדה' }
+          ],
+          diagnoses: [
+            { code: 'M25.9', description: 'פגיעה בברך' },
+            { code: 'M79.1', description: 'כאבי שרירים' }
+          ],
+          decisionTable: [
+            { item: 'נכות רפואית', decision: 'מוכר', percentage: 15, notes: 'בברך ימין' }
+          ],
+          disabilityWeightTable: [
+            { bodyPart: 'ברך ימין', percentage: 15, type: 'רפואי', calculation: '15% מלא' }
+          ],
+          processingStatus: 'completed' as const,
+        }));
+        
+        setResults(completedResults);
         setIsProcessing(false);
+        
         toast({
           title: "העיבוד הושלם בהצלחה",
           description: `עובדו ${files.length} קבצים`
