@@ -85,26 +85,29 @@ const Index = () => {
       const processedResults = await Promise.all(
         files.map(async (file, index) => {
           try {
-            // Dynamic import of PDF.js with disabled worker
-            const pdfjs = await import('pdfjs-dist');
-            pdfjs.GlobalWorkerOptions.workerSrc = '';
-            
-            // Extract text from PDF using PDF.js
+            // Use a simple PDF text extraction approach
             const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjs.getDocument({ 
-              data: arrayBuffer,
-              useWorkerFetch: false,
-              isEvalSupported: false
-            }).promise;
             
+            // Simple text extraction from PDF buffer
             let pdfText = '';
-            for (let i = 1; i <= pdf.numPages; i++) {
-              const page = await pdf.getPage(i);
-              const textContent = await page.getTextContent();
-              const pageText = textContent.items
-                .map((item: any) => item.str)
-                .join(' ');
-              pdfText += pageText + '\n';
+            try {
+              const uint8Array = new Uint8Array(arrayBuffer);
+              const decoder = new TextDecoder('utf-8');
+              const rawText = decoder.decode(uint8Array);
+              
+              // Extract readable text between stream objects
+              const textMatches = rawText.match(/BT.*?ET/g);
+              if (textMatches) {
+                pdfText = textMatches.join(' ').replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F]+/g, ' ');
+              }
+              
+              // Fallback: try to extract any Hebrew or English text
+              if (!pdfText.trim()) {
+                pdfText = rawText.replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F\s]+/g, ' ');
+              }
+            } catch (parseError) {
+              console.warn('PDF parsing warning:', parseError);
+              pdfText = 'טקסט לא נוהח לחילוץ מ-PDF זה';
             }
 
             console.log(`Extracted text from ${file.name}:`, pdfText.substring(0, 500));
