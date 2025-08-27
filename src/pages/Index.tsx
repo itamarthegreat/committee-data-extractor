@@ -85,13 +85,17 @@ const Index = () => {
       const processedResults = await Promise.all(
         files.map(async (file, index) => {
           try {
-            // Dynamic import of PDF.js with worker setup
+            // Dynamic import of PDF.js with disabled worker
             const pdfjs = await import('pdfjs-dist');
-            pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+            pdfjs.GlobalWorkerOptions.workerSrc = '';
             
             // Extract text from PDF using PDF.js
             const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+            const pdf = await pdfjs.getDocument({ 
+              data: arrayBuffer,
+              useWorkerFetch: false,
+              isEvalSupported: false
+            }).promise;
             
             let pdfText = '';
             for (let i = 1; i <= pdf.numPages; i++) {
