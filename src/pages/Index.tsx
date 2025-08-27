@@ -10,10 +10,6 @@ import ApiKeyInput from '@/components/ApiKeyInput';
 import ProcessingResults from '@/components/ProcessingResults';
 import { ProcessedDocument } from '@/types/document';
 import OpenAI from 'openai';
-import * as pdfjsLib from 'pdfjs-dist';
-
-// Set up PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.54/pdf.worker.min.js`;
 
 const Index = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -89,9 +85,13 @@ const Index = () => {
       const processedResults = await Promise.all(
         files.map(async (file, index) => {
           try {
+            // Dynamic import of PDF.js with worker setup
+            const pdfjs = await import('pdfjs-dist');
+            pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+            
             // Extract text from PDF using PDF.js
             const arrayBuffer = await file.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
             
             let pdfText = '';
             for (let i = 1; i <= pdf.numPages; i++) {
