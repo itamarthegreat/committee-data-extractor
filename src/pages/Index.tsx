@@ -112,13 +112,17 @@ const Index = () => {
 
             console.log(`Extracted text from ${file.name}:`, pdfText.substring(0, 500));
 
+            // Limit text length to avoid token limit (approximately 30,000 characters for safe processing)
+            const maxLength = 30000;
+            const truncatedText = pdfText.length > maxLength ? pdfText.substring(0, maxLength) + '...' : pdfText;
+
             // Create prompt for OpenAI
             const prompt = `
 אתה עוזר AI המתמחה בעיבוד מסמכי ועדות רפואיות ישראליות. 
 עליך לחלץ נתונים ממסמך הועדה הרפואית הבא ולהחזיר אותם בפורמט JSON מובנה.
 
 טקסט המסמך:
-${pdfText}
+${truncatedText}
 
 אנא חלץ את הנתונים הבאים והחזר אותם בפורמט JSON:
 
