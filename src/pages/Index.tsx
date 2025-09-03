@@ -10,6 +10,7 @@ import ApiKeyInput from '@/components/ApiKeyInput';
 import ProcessingResults from '@/components/ProcessingResults';
 import { ProcessedDocument } from '@/types/document';
 import OpenAI from 'openai';
+import * as XLSX from 'xlsx';
 
 const Index = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -241,6 +242,110 @@ ${truncatedText}
     }
   };
 
+  const exportAllToExcel = () => {
+    if (results.length === 0) return;
+    
+    const workbook = XLSX.utils.book_new();
+    
+    // Create summary sheet
+    const summaryData = [
+      ['שם הקובץ', 'סוג הועדה', 'תאריך ועדה', 'סניף', 'שם המבוטח', 'ת.ז', 'תאריך פגיעה', 'סטטוס'],
+      ...results.map(doc => [
+        doc.fileName,
+        doc.committeeType,
+        doc.committeeDate,
+        doc.committeeBranch,
+        doc.insuredName,
+        doc.idNumber,
+        doc.injuryDate || 'לא רלוונטי',
+        doc.processingStatus === 'completed' ? 'הושלם' : doc.processingStatus === 'error' ? 'שגיאה' : 'בעיבוד'
+      ])
+    ];
+    
+    const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+    XLSX.utils.book_append_sheet(workbook, summarySheet, 'סיכום כללי');
+    
+    // Process each completed document
+    results.forEach((doc, index) => {
+      if (doc.processingStatus === 'completed') {
+        // Main info sheet for each document
+        const mainData = [
+          ['שדה', 'ערך'],
+          ['שם הקובץ', doc.fileName],
+          ['סוג הועדה', doc.committeeType],
+          ['תאריך ועדה', doc.committeeDate],
+          ['סניף הועדה', doc.committeeBranch],
+          ['שם המבוטח', doc.insuredName],
+          ['תעודת זהות', doc.idNumber],
+          ['תאריך פגיעה', doc.injuryDate || 'לא רלוונטי']
+        ];
+        
+        const mainSheet = XLSX.utils.aoa_to_sheet(mainData);
+        const sheetName = `מסמך ${index + 1} - פרטים`;
+        XLSX.utils.book_append_sheet(workbook, mainSheet, sheetName);
+        
+        // Committee members for this document
+        if (doc.committeeMembers.length > 0) {
+          const membersData = [
+            ['שם', 'תפקיד'],
+            ...doc.committeeMembers.map(member => [member.name, member.role])
+          ];
+          const membersSheet = XLSX.utils.aoa_to_sheet(membersData);
+          XLSX.utils.book_append_sheet(workbook, membersSheet, `מסמך ${index + 1} - חברי ועדה`);
+        }
+        
+        // Diagnoses for this document
+        if (doc.diagnoses.length > 0) {
+          const diagnosesData = [
+            ['קוד אבחנה', 'תיאור'],
+            ...doc.diagnoses.map(diagnosis => [diagnosis.code, diagnosis.description])
+          ];
+          const diagnosesSheet = XLSX.utils.aoa_to_sheet(diagnosesData);
+          XLSX.utils.book_append_sheet(workbook, diagnosesSheet, `מסמך ${index + 1} - אבחנות`);
+        }
+        
+        // Decision table for this document
+        if (doc.decisionTable.length > 0) {
+          const decisionData = [
+            ['פריט', 'החלטה', 'אחוז', 'הערות'],
+            ...doc.decisionTable.map(row => [
+              row.item, 
+              row.decision, 
+              row.percentage?.toString() || '', 
+              row.notes || ''
+            ])
+          ];
+          const decisionSheet = XLSX.utils.aoa_to_sheet(decisionData);
+          XLSX.utils.book_append_sheet(workbook, decisionSheet, `מסמך ${index + 1} - החלטות`);
+        }
+        
+        // Disability weight for this document
+        if (doc.disabilityWeightTable.length > 0) {
+          const disabilityData = [
+            ['איבר', 'אחוז', 'סוג', 'חישוב'],
+            ...doc.disabilityWeightTable.map(row => [
+              row.bodyPart, 
+              row.percentage.toString(), 
+              row.type, 
+              row.calculation
+            ])
+          ];
+          const disabilitySheet = XLSX.utils.aoa_to_sheet(disabilityData);
+          XLSX.utils.book_append_sheet(workbook, disabilitySheet, `מסמך ${index + 1} - שקלול נכות`);
+        }
+      }
+    });
+    
+    // Save file
+    const timestamp = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `ועדות_רפואיות_מעובדות_${timestamp}.xlsx`);
+    
+    toast({
+      title: "הורד בהצלחה",
+      description: "הקובץ נשמר בהצלחה"
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gradient-subtle p-6" dir="rtl">
       <div className="max-w-6xl mx-auto space-y-8">
@@ -307,7 +412,7 @@ ${truncatedText}
                   <h2 className="text-xl font-semibold">תוצאות עיבוד</h2>
                 </div>
                 {results.length > 0 && (
-                  <Button variant="outline" className="gap-2">
+                  <Button variant="outline" className="gap-2" onClick={exportAllToExcel}>
                     <Download className="h-4 w-4" />
                     ייצא לExcel
                   </Button>
