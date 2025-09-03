@@ -125,30 +125,52 @@ const Index = () => {
 טקסט המסמך:
 ${truncatedText}
 
-אנא חלץ את הנתונים הבאים והחזר אותם בפורמט JSON:
+אנא חלץ את הנתונים הבאים והחזר אותם בפורמט JSON בדיוק כפי שמופיע במסמך:
 
 {
-  "committeeType": "סוג הועדה (למשל: ועדה רפואית)",
-  "committeeDate": "תאריך הועדה (YYYY-MM-DD)",
+  "committeeType": "סוג הועדה (כפי שמופיע בכותרת)",
+  "committeeDate": "תאריך הועדה בפורמט YYYY-MM-DD",
   "committeeBranch": "סניף הועדה",
   "insuredName": "שם המבוטח",
-  "idNumber": "מספר זהות",
-  "injuryDate": "תאריך הפגיעה",
+  "idNumber": "מספר תעודת זהות",
+  "injuryDate": "תאריך הפגיעה (אם קיים)",
   "committeeMembers": [
-    {"name": "שם החבר", "role": "תפקיד"}
+    {
+      "name": "שם החבר",
+      "role": "תפקיד החבר"
+    }
   ],
   "diagnoses": [
-    {"code": "קוד אבחנה", "description": "תיאור האבחנה"}
+    {
+      "code": "קוד האבחנה",
+      "description": "תיאור האבחנה"
+    }
   ],
   "decisionTable": [
-    {"item": "פריט", "decision": "החלטה", "percentage": אחוז_מספרי, "notes": "הערות"}
+    {
+      "item": "פריט/נושא ההחלטה",
+      "decision": "ההחלטה שהתקבלה", 
+      "percentage": אחוז_נכות_אם_קיים,
+      "notes": "הערות נוספות"
+    }
   ],
   "disabilityWeightTable": [
-    {"bodyPart": "איבר", "percentage": אחוז_מספרי, "type": "סוג", "calculation": "חישוב"}
+    {
+      "bodyPart": "איבר/חלק גוף",
+      "percentage": אחוז_נכות,
+      "type": "סוג הנכות",
+      "calculation": "חישוב הנכות"
+    }
   ]
 }
 
-חשוב: החזר רק את ה-JSON ללא טקסט נוסף.`;
+הוראות חשובות:
+1. חלץ את כל הנתונים כפי שהם מופיעים במסמך המקורי
+2. אם יש טבלה - חלץ את כל השורות
+3. אם משהו לא קיים במסמך, השאר אותו ריק או null
+4. החזר רק JSON תקין ללא טקסט נוסף
+5. אל תוסיף מידע שלא מופיע במסמך
+6. שים לב לפרטים הקטנים כמו תאריכים ומספרים`;
 
             const completion = await openai.chat.completions.create({
               model: "gpt-4o-mini",
