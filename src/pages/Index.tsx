@@ -87,7 +87,7 @@ const Index = () => {
       const processedResults = await Promise.all(
         files.map(async (file, index) => {
           try {
-            // Proper PDF text extraction using pdfjs-dist
+            // More robust PDF text extraction
             const arrayBuffer = await file.arrayBuffer();
             
             let pdfText = '';
@@ -95,11 +95,24 @@ const Index = () => {
               // Dynamic import of pdfjs-dist for browser compatibility
               const pdfjsLib = await import('pdfjs-dist');
               
-              // Use jsdelivr CDN which is more reliable for workers
-              pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+              // Try to set worker without external dependency first
+              try {
+                // Use local worker if available
+                const workerBlob = new Blob([`
+                  importScripts('https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js');
+                `], { type: 'application/javascript' });
+                pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
+              } catch {
+                // Fallback to direct CDN
+                pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+              }
               
-              // Load the PDF document
-              const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+              // Load the PDF document with more tolerant options
+              const loadingTask = pdfjsLib.getDocument({ 
+                data: arrayBuffer,
+                verbosity: 0, // Reduce logging
+                cMapPacked: false
+              });
               const pdf = await loadingTask.promise;
               
               console.log(`PDF loaded successfully: ${pdf.numPages} pages`);
@@ -112,9 +125,10 @@ const Index = () => {
                   const page = await pdf.getPage(i);
                   const textContent = await page.getTextContent();
                   
-                  // Combine all text items from the page
+                  // Combine all text items from the page with better spacing
                   const pageText = textContent.items
                     .map((item: any) => item.str)
+                    .filter(str => str && str.trim())
                     .join(' ')
                     .trim();
                   
@@ -202,7 +216,7 @@ ${truncatedText}
 6. שים לב לפרטים הקטנים כמו תאריכים ומספרים`;
 
             const completion = await openai.chat.completions.create({
-              model: "gpt-4o-mini",
+              model: "gpt-5-2025-08-07",
               messages: [{ role: "user", content: prompt }],
               temperature: 0.1,
             });
