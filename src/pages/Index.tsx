@@ -95,8 +95,8 @@ const Index = () => {
               // Dynamic import of pdfjs-dist for browser compatibility
               const pdfjsLib = await import('pdfjs-dist');
               
-              // Set worker source for pdfjs
-              pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+              // Use jsdelivr CDN which is more reliable for workers
+              pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
               
               // Load the PDF document
               const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
