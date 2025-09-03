@@ -87,30 +87,48 @@ const Index = () => {
       const processedResults = await Promise.all(
         files.map(async (file, index) => {
           try {
-            // Simple PDF text extraction for browser environment
+            // Proper PDF text extraction using pdfjs-dist
             const arrayBuffer = await file.arrayBuffer();
             
             let pdfText = '';
             try {
-              // Convert to bytes and extract text using simple method
-              const uint8Array = new Uint8Array(arrayBuffer);
-              const decoder = new TextDecoder('utf-8', { fatal: false });
-              let rawText = decoder.decode(uint8Array);
+              // Dynamic import of pdfjs-dist for browser compatibility
+              const pdfjsLib = await import('pdfjs-dist');
               
-              // Try to find text between stream objects (common in PDFs)
-              const streamMatches = rawText.match(/stream[\s\S]*?endstream/g);
-              if (streamMatches) {
-                let streamText = streamMatches.join(' ');
-                // Clean up binary data and extract readable text
-                streamText = streamText.replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F\s\d\.\-\(\)\[\]]+/g, ' ');
+              // Set worker source for pdfjs
+              pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+              
+              // Load the PDF document
+              const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+              const pdf = await loadingTask.promise;
+              
+              console.log(`PDF loaded successfully: ${pdf.numPages} pages`);
+              
+              // Extract text from all pages
+              const textPages: string[] = [];
+              
+              for (let i = 1; i <= pdf.numPages; i++) {
+                try {
+                  const page = await pdf.getPage(i);
+                  const textContent = await page.getTextContent();
+                  
+                  // Combine all text items from the page
+                  const pageText = textContent.items
+                    .map((item: any) => item.str)
+                    .join(' ')
+                    .trim();
+                  
+                  if (pageText) {
+                    textPages.push(pageText);
+                  }
+                } catch (pageError) {
+                  console.warn(`Error extracting text from page ${i}:`, pageError);
+                }
               }
               
-              // Extract any Hebrew or Latin text with common punctuation
-              pdfText = rawText.replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F\s\d\.\-\(\)\[\]\:\/\%]+/g, ' ')
-                               .replace(/\s+/g, ' ')
-                               .trim();
+              pdfText = textPages.join('\n\n').trim();
               
-              console.log(`Extracted raw text from ${file.name} (length: ${pdfText.length}):`, pdfText.substring(0, 1000));
+              console.log(`Extracted text from ${file.name} (${pdf.numPages} pages, length: ${pdfText.length}):`, pdfText.substring(0, 500));
               
             } catch (parseError) {
               console.warn('PDF parsing error:', parseError);
