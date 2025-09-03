@@ -11,8 +11,7 @@ import ProcessingResults from '@/components/ProcessingResults';
 import { ProcessedDocument } from '@/types/document';
 import OpenAI from 'openai';
 import * as XLSX from 'xlsx';
-// @ts-ignore
-import pdf from 'pdf-parse';
+import * as pdfjsLib from 'pdfjs-dist';
 
 const Index = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -88,38 +87,47 @@ const Index = () => {
       const processedResults = await Promise.all(
         files.map(async (file, index) => {
           try {
-            // Use pdf-parse for better text extraction
+            // Use pdfjs-dist for browser-compatible PDF text extraction
             const arrayBuffer = await file.arrayBuffer();
             
             let pdfText = '';
             try {
-              // Use pdf-parse library for proper text extraction
-              const pdfData = await pdf(arrayBuffer);
-              pdfText = pdfData.text || '';
+              // Set up PDF.js worker
+              pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.4.54/build/pdf.worker.min.js';
+              
+              // Load the PDF document
+              const pdfDocument = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+              
+              // Extract text from all pages
+              const textPromises = [];
+              for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+                textPromises.push(
+                  pdfDocument.getPage(pageNum).then(async (page) => {
+                    const textContent = await page.getTextContent();
+                    return textContent.items
+                      .map((item: any) => item.str)
+                      .join(' ');
+                  })
+                );
+              }
+              
+              const pageTexts = await Promise.all(textPromises);
+              pdfText = pageTexts.join('\n').trim();
               
               console.log(`Extracted text from ${file.name}:`, pdfText.substring(0, 500));
               
-              // If we didn't get good text, try fallback method
-              if (pdfText.length < 50) {
-                const uint8Array = new Uint8Array(arrayBuffer);
-                const decoder = new TextDecoder('utf-8');
-                const rawText = decoder.decode(uint8Array);
-                
-                // Extract readable text between stream objects
-                const textMatches = rawText.match(/BT.*?ET/g);
-                if (textMatches) {
-                  pdfText = textMatches.join(' ').replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F]+/g, ' ');
-                }
-                
-                // Fallback: try to extract any Hebrew or English text
-                if (!pdfText.trim()) {
-                  pdfText = rawText.replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F\s]+/g, ' ');
-                }
-              }
-              
             } catch (parseError) {
-              console.warn('PDF parsing warning:', parseError);
-              throw new Error('לא ניתן לחלץ טקסט מהקובץ. ייתכן שהקובץ מוגן או פגום.');
+              console.warn('PDF parsing error:', parseError);
+              // Fallback to simple text extraction
+              const uint8Array = new Uint8Array(arrayBuffer);
+              const decoder = new TextDecoder('utf-8', { fatal: false });
+              const rawText = decoder.decode(uint8Array);
+              
+              // Try to extract any readable text
+              pdfText = rawText
+                .replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F\s\d]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
             }
 
             // Check if we have meaningful text
