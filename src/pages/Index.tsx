@@ -160,7 +160,15 @@ ${truncatedText}
 
             let extractedData;
             try {
-              extractedData = JSON.parse(content || '{}');
+              // Clean the response - remove markdown code blocks if present
+              let cleanContent = content || '{}';
+              if (cleanContent.startsWith('```json')) {
+                cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+              } else if (cleanContent.startsWith('```')) {
+                cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+              }
+              
+              extractedData = JSON.parse(cleanContent);
             } catch (parseError) {
               console.error('JSON parse error:', parseError);
               throw new Error('תגובה לא תקינה מ-OpenAI');
