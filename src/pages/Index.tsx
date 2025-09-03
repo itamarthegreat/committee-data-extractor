@@ -11,6 +11,8 @@ import ProcessingResults from '@/components/ProcessingResults';
 import { ProcessedDocument } from '@/types/document';
 import OpenAI from 'openai';
 import * as XLSX from 'xlsx';
+// @ts-ignore
+import pdf from 'pdf-parse';
 
 const Index = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -86,29 +88,43 @@ const Index = () => {
       const processedResults = await Promise.all(
         files.map(async (file, index) => {
           try {
-            // Use a simple PDF text extraction approach
+            // Use pdf-parse for better text extraction
             const arrayBuffer = await file.arrayBuffer();
             
-            // Simple text extraction from PDF buffer
             let pdfText = '';
             try {
-              const uint8Array = new Uint8Array(arrayBuffer);
-              const decoder = new TextDecoder('utf-8');
-              const rawText = decoder.decode(uint8Array);
+              // Use pdf-parse library for proper text extraction
+              const pdfData = await pdf(arrayBuffer);
+              pdfText = pdfData.text || '';
               
-              // Extract readable text between stream objects
-              const textMatches = rawText.match(/BT.*?ET/g);
-              if (textMatches) {
-                pdfText = textMatches.join(' ').replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F]+/g, ' ');
+              console.log(`Extracted text from ${file.name}:`, pdfText.substring(0, 500));
+              
+              // If we didn't get good text, try fallback method
+              if (pdfText.length < 50) {
+                const uint8Array = new Uint8Array(arrayBuffer);
+                const decoder = new TextDecoder('utf-8');
+                const rawText = decoder.decode(uint8Array);
+                
+                // Extract readable text between stream objects
+                const textMatches = rawText.match(/BT.*?ET/g);
+                if (textMatches) {
+                  pdfText = textMatches.join(' ').replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F]+/g, ' ');
+                }
+                
+                // Fallback: try to extract any Hebrew or English text
+                if (!pdfText.trim()) {
+                  pdfText = rawText.replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F\s]+/g, ' ');
+                }
               }
               
-              // Fallback: try to extract any Hebrew or English text
-              if (!pdfText.trim()) {
-                pdfText = rawText.replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F\s]+/g, ' ');
-              }
             } catch (parseError) {
               console.warn('PDF parsing warning:', parseError);
-              pdfText = 'טקסט לא נוהח לחילוץ מ-PDF זה';
+              throw new Error('לא ניתן לחלץ טקסט מהקובץ. ייתכן שהקובץ מוגן או פגום.');
+            }
+
+            // Check if we have meaningful text
+            if (!pdfText || pdfText.trim().length < 20) {
+              throw new Error('לא ניתן לחלץ טקסט מהקובץ. ייתכן שהקובץ מוגן או פגום.');
             }
 
             console.log(`Extracted text from ${file.name}:`, pdfText.substring(0, 500));
