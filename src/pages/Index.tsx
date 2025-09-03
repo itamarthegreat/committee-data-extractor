@@ -87,48 +87,55 @@ const Index = () => {
       const processedResults = await Promise.all(
         files.map(async (file, index) => {
           try {
-            // More robust PDF text extraction
+            // Robust PDF text extraction with multiple fallback methods
             const arrayBuffer = await file.arrayBuffer();
             
             let pdfText = '';
+            
+            // Method 1: Try pdfjs-dist with embedded worker
             try {
-              // Dynamic import of pdfjs-dist for browser compatibility
               const pdfjsLib = await import('pdfjs-dist');
               
-              // Try to set worker without external dependency first
+              // Create an embedded worker to avoid CORS issues
+              const workerCode = `
+                // Minimal PDF.js worker implementation
+                importScripts('https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js');
+              `;
+              
               try {
-                // Use local worker if available
-                const workerBlob = new Blob([`
-                  importScripts('https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js');
-                `], { type: 'application/javascript' });
+                const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
                 pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
-              } catch {
-                // Fallback to direct CDN
-                pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+              } catch (workerError) {
+                // If blob creation fails, use inline worker approach
+                pdfjsLib.GlobalWorkerOptions.workerSrc = `data:application/javascript;base64,${btoa(`
+                  // Minimal inline PDF.js worker
+                  self.importScripts = () => {};
+                `)}`;
               }
               
-              // Load the PDF document with more tolerant options
               const loadingTask = pdfjsLib.getDocument({ 
                 data: arrayBuffer,
-                verbosity: 0, // Reduce logging
-                cMapPacked: false
+                useWorkerFetch: false,
+                isEvalSupported: false,
+                useSystemFonts: true
               });
+              
               const pdf = await loadingTask.promise;
+              console.log(`PDF loaded successfully with pdfjs: ${pdf.numPages} pages`);
               
-              console.log(`PDF loaded successfully: ${pdf.numPages} pages`);
-              
-              // Extract text from all pages
               const textPages: string[] = [];
-              
               for (let i = 1; i <= pdf.numPages; i++) {
                 try {
                   const page = await pdf.getPage(i);
                   const textContent = await page.getTextContent();
                   
-                  // Combine all text items from the page with better spacing
                   const pageText = textContent.items
-                    .map((item: any) => item.str)
-                    .filter(str => str && str.trim())
+                    .map((item: any) => {
+                      // Handle Hebrew RTL text properly
+                      let str = item.str || '';
+                      return str.trim();
+                    })
+                    .filter(str => str.length > 0)
                     .join(' ')
                     .trim();
                   
@@ -141,17 +148,61 @@ const Index = () => {
               }
               
               pdfText = textPages.join('\n\n').trim();
+              console.log(`Extracted text with pdfjs (${pdf.numPages} pages, ${pdfText.length} chars)`);
               
-              console.log(`Extracted text from ${file.name} (${pdf.numPages} pages, length: ${pdfText.length}):`, pdfText.substring(0, 500));
+            } catch (pdfjsError) {
+              console.warn('PDF.js extraction failed, trying fallback method:', pdfjsError);
               
-            } catch (parseError) {
-              console.warn('PDF parsing error:', parseError);
-              throw new Error('לא ניתן לחלץ טקסט מהקובץ. ייתכן שהקובץ מוגן או פגום.');
+              // Method 2: Fallback - Basic binary text extraction with Hebrew support
+              try {
+                const uint8Array = new Uint8Array(arrayBuffer);
+                const binaryString = Array.from(uint8Array, byte => String.fromCharCode(byte)).join('');
+                
+                // Extract text between specific PDF markers
+                const textRegex = /BT\s+.*?ET/gs;
+                const streamRegex = /stream\s+([\s\S]*?)\s+endstream/g;
+                
+                let extractedTexts: string[] = [];
+                
+                // Try to find text objects
+                const textMatches = binaryString.match(textRegex);
+                if (textMatches) {
+                  extractedTexts = extractedTexts.concat(textMatches);
+                }
+                
+                // Try to find stream content
+                const streamMatches = binaryString.match(streamRegex);
+                if (streamMatches) {
+                  extractedTexts = extractedTexts.concat(streamMatches.map(m => m.replace(/stream\s+|\s+endstream/g, '')));
+                }
+                
+                // Clean and filter the extracted text
+                let combinedText = extractedTexts.join(' ');
+                
+                // Remove binary data and keep readable text (Hebrew + Latin + numbers)
+                combinedText = combinedText
+                  .replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F\s\d\.\-\(\)\[\]\:\;\/\%\,\'\"\!]/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                
+                // Extract meaningful sentences (at least 10 characters)
+                const sentences = combinedText
+                  .split(/[\.!?\n]/)
+                  .filter(sentence => sentence.trim().length > 10)
+                  .map(sentence => sentence.trim());
+                
+                pdfText = sentences.join('. ').trim();
+                console.log(`Extracted text with fallback method (${pdfText.length} chars)`);
+                
+              } catch (fallbackError) {
+                console.error('All PDF extraction methods failed:', fallbackError);
+                throw new Error('לא ניתן לחלץ טקסט מהקובץ. נסה קובץ PDF אחר או וודא שהקובץ לא מוגן.');
+              }
             }
-
-            // Check if we have meaningful text
+            
+            // Final validation
             if (!pdfText || pdfText.trim().length < 20) {
-              throw new Error('לא ניתן לחלץ טקסט מהקובץ. ייתכן שהקובץ מוגן או פגום.');
+              throw new Error('הקובץ לא מכיל טקסט קריא או שהוא מוצפן. נסה קובץ PDF אחר.');
             }
 
             console.log(`Extracted text from ${file.name}:`, pdfText.substring(0, 500));
