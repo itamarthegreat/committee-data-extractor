@@ -5,18 +5,21 @@ export class PdfService {
     try {
       const arrayBuffer = await file.arrayBuffer();
       
-      // Method 1: Try pdfjs-dist with local worker setup
+      // Method 1: Try pdfjs-dist first with better configuration
       try {
         const pdfjsLib = await import('pdfjs-dist');
         
-        // Use built-in worker that comes with the package
+        // Configure worker properly
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+        
+        console.log('Loading PDF with pdfjs-dist...');
         
         const loadingTask = pdfjsLib.getDocument({ 
           data: arrayBuffer,
           useWorkerFetch: false,
           isEvalSupported: false,
-          useSystemFonts: true
+          useSystemFonts: true,
+          verbosity: 0
         });
         
         const pdf = await loadingTask.promise;
@@ -28,16 +31,22 @@ export class PdfService {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
             
+            console.log(`Page ${i} has ${textContent.items.length} text items`);
+            
             const pageText = textContent.items
               .map((item: any) => {
-                let str = item.str || '';
-                return str.trim();
+                if (item.str && item.str.trim()) {
+                  return item.str.trim();
+                }
+                return '';
               })
               .filter(str => str.length > 0)
               .join(' ')
               .trim();
             
-            if (pageText) {
+            console.log(`Page ${i} extracted text:`, pageText.substring(0, 200));
+            
+            if (pageText && pageText.length > 5) {
               textPages.push(pageText);
             }
           } catch (pageError) {
@@ -46,7 +55,8 @@ export class PdfService {
         }
         
         const extractedText = textPages.join('\n\n').trim();
-        console.log(`Extracted ${extractedText.length} characters with pdfjs-dist`);
+        console.log(`Total extracted text: ${extractedText.length} characters`);
+        console.log(`Sample:`, extractedText.substring(0, 500));
         
         if (extractedText && extractedText.length > 20) {
           return extractedText;
@@ -56,68 +66,70 @@ export class PdfService {
         console.warn('pdfjs-dist failed, trying binary extraction:', pdfjsError);
       }
       
-      // Method 2: Fallback binary text extraction for browser
-      console.log('Attempting binary text extraction...');
+      // Method 2: Enhanced binary text extraction 
+      console.log('Attempting enhanced binary text extraction...');
       const uint8Array = new Uint8Array(arrayBuffer);
-      let extractedText = '';
       
-      // Convert to string and extract readable text
+      // Convert to string for analysis
       let binaryString = '';
       for (let i = 0; i < uint8Array.length; i++) {
         binaryString += String.fromCharCode(uint8Array[i]);
       }
       
-      // Extract text between BT (Begin Text) and ET (End Text) markers
-      const textObjectRegex = /BT\s+(.*?)\s+ET/gs;
-      const streamRegex = /stream\s+([\s\S]*?)\s+endstream/g;
+      console.log('Binary string length:', binaryString.length);
       
-      let matches = binaryString.match(textObjectRegex);
-      if (matches) {
-        for (const match of matches) {
-          // Clean up the text content
-          let cleanText = match.replace(/BT\s+|ET/g, '')
-            .replace(/Tj\s*|\)\s*Tj/g, ' ')
-            .replace(/\[(.*?)\]/g, '$1')
-            .replace(/\((.*?)\)/g, '$1')
-            .replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F\s\d\.\-\(\)\[\]\:\;\/\%\,\'\"\!]/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-          
-          if (cleanText.length > 3) {
-            extractedText += cleanText + ' ';
+      // Method 2a: Look for text objects with better regex
+      let extractedTexts: string[] = [];
+      
+      // Enhanced text extraction patterns
+      const patterns = [
+        /\((.*?)\)/g,           // Text in parentheses  
+        /\[(.*?)\]/g,           // Text in brackets
+        /BT\s+(.*?)\s+ET/gs,    // Text objects
+        /Tj\s*(.+?)(?=\s|$)/g,  // Text drawing commands
+        /TJ\s*\[(.*?)\]/g       // Array-based text
+      ];
+      
+      for (const pattern of patterns) {
+        const matches = binaryString.match(pattern);
+        if (matches) {
+          for (const match of matches) {
+            let cleaned = match
+              .replace(/BT\s+|ET\s*|Tj\s*|\(|\)|\[|\]/g, '')
+              .replace(/\s+/g, ' ')
+              .trim();
+            
+            // Keep only text with Hebrew/Latin characters
+            if (/[\u0590-\u05FF\u0020-\u007E]/.test(cleaned) && cleaned.length > 2) {
+              extractedTexts.push(cleaned);
+            }
           }
         }
       }
       
-      // Also try to extract from stream objects
-      matches = binaryString.match(streamRegex);
-      if (matches) {
-        for (const match of matches) {
-          let streamContent = match.replace(/stream\s+|\s+endstream/g, '');
-          // Extract readable characters
-          let readable = streamContent
-            .replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F\s\d\.\-\(\)\[\]\:\;\/\%\,\'\"\!]/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-          
-          if (readable.length > 10) {
-            extractedText += readable + ' ';
-          }
-        }
+      // Method 2b: Look for readable UTF-8 sequences
+      const utf8Regex = /[\u0590-\u05FF\u0020-\u007E\s]{3,}/g;
+      const utf8Matches = binaryString.match(utf8Regex);
+      if (utf8Matches) {
+        extractedTexts = extractedTexts.concat(utf8Matches);
       }
       
-      // Clean up final text
-      extractedText = extractedText
+      // Clean and join all extracted text
+      let finalText = extractedTexts
+        .map(text => text.trim())
+        .filter(text => text.length > 2)
+        .join(' ')
         .replace(/\s+/g, ' ')
         .trim();
       
-      console.log(`Binary extraction yielded ${extractedText.length} characters`);
+      console.log(`Binary extraction yielded ${finalText.length} characters`);
+      console.log('Sample extracted text:', finalText.substring(0, 300));
       
-      if (extractedText && extractedText.length > 20) {
-        return extractedText;
+      if (finalText && finalText.length > 20) {
+        return finalText;
       }
       
-      throw new Error('לא ניתן לחלץ טקסט מהקובץ. הקובץ עלול להיות מוגן או סרוק (תמונה).');
+      throw new Error('לא ניתן לחלץ טקסט קריא מהקובץ. הקובץ עלול להיות מוגן, מוצפן או להכיל רק תמונות.');
       
     } catch (error) {
       console.error('PDF extraction error:', error);

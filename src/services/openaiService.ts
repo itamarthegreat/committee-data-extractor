@@ -13,10 +13,14 @@ export class OpenAIService {
   
   async processDocumentText(text: string, fileName: string): Promise<Partial<ProcessedDocument>> {
     // Limit text length and add debugging
-    const maxLength = 25000; // Reduced for better processing
+    const maxLength = 20000; // Further reduced for better processing
     const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
     
-    console.log(`Processing ${fileName} - Text sample:`, truncatedText.substring(0, 1000));
+    console.log(`Processing ${fileName}:`);
+    console.log(`- Full text length: ${text.length} chars`);
+    console.log(`- Truncated text length: ${truncatedText.length} chars`);
+    console.log(`- Text sample (first 500 chars):`, truncatedText.substring(0, 500));
+    console.log(`- Text sample (last 500 chars):`, truncatedText.substring(Math.max(0, truncatedText.length - 500)));
     
     const prompt = this.createImprovedExtractionPrompt(truncatedText);
     
@@ -27,9 +31,13 @@ export class OpenAIService {
       });
 
       const content = completion.choices[0].message.content;
-      console.log(`OpenAI response for ${fileName}:`, content);
+      console.log(`OpenAI raw response for ${fileName}:`, content);
+      
+      if (!content) {
+        throw new Error('OpenAI returned empty response');
+      }
 
-      return this.parseOpenAIResponse(content || '{}');
+      return this.parseOpenAIResponse(content);
       
     } catch (error) {
       console.error('OpenAI processing error:', error);
@@ -39,33 +47,43 @@ export class OpenAIService {
   
   private createImprovedExtractionPrompt(text: string): string {
     return `
-אתה מומחה בחילוץ מידע ממסמכי ביטוח לאומי בעברית. עליך לחלץ מידע מובנה מהמסמך בצורה מדויקת.
+אתה מומחה בחילוץ מידע ממסמכי ביטוח לאומי וועדות רפואיות בעברית. 
 
-המסמך:
+המסמך לעיבוד:
 ${text}
 
-חלץ את המידע הבא בדיוק כפי שמופיע במסמך:
+משימתך: חלץ מידע מדויק מהמסמך לפי הקטגוריות הבאות.
 
-1. **סוג הועדה** - הכותרת של המסמך (למשל: "הודעה הועדה הרפואית", "החלטת ועדה רפואית")
-2. **תאריך ועדה** - התאריך שבו התכנסה הועדה
-3. **סניף הועדה** - שם הסניף או האזור
-4. **שם המבוטח** - השם המלא של המבוטח
-5. **תעודת זהות** - מספר ת.ז של 9 ספרות
-6. **תאריך פגיעה** - התאריך בו אירעה הפגיעה (רלוונטי לנכות מעבודה)
-7. **משתתפי הועדה** - רשימת השמות והתפקידים של חברי הועדה
-8. **רשימת אבחנות** - כל האבחנות הרפואיות עם קודים אם יש
-9. **טבלת החלטה** - כל השורות בטבלה שמכילות החלטות, אחוזי נכות, תקופות
-10. **טבלת שקלול נכות** - פירוט שקלול הנכות לפי איברים או סוגי נכות
+חפש במסמך:
 
-החזר תוצאה בפורמט JSON הזה בלבד:
+1. **כותרת המסמך** - סוג הועדה (למשל: "הודעה הועדה הרפואית", "החלטת ועדה")
+2. **תאריך** - התאריך בו התכנסה הועדה (יכול להיות בפורמטים שונים)
+3. **מקום/סניף** - שם העיר, סניף או מיקום 
+4. **פרטי מבוטח** - שם ומספר תעודת זהות (9 ספרות)
+5. **תאריך פגיעה** - אם רלוונטי למקרה
+6. **חברי ועדה** - שמות ותפקידים של המשתתפים
+7. **אבחנות רפואיות** - רשימת כל האבחנות
+8. **טבלאות החלטות** - כל השורות עם אחוזים והחלטות
+9. **טבלת שקלול נכות** - פירוט לפי איברים
+
+אם אתה לא מוצא מידע מסוים, כתב "לא נמצא" במקום null.
+
+דוגמה למבנה שאתה צריך לחפש:
+- ביטוח לאומי 
+- ועדה רפואית
+- שם: [שם המבוטח]
+- ת.ז: [מספר]
+- תאריך: [תאריך]
+
+החזר בפורמט JSON בלבד:
 
 {
-  "committeeType": "סוג הועדה מהכותרת",
-  "committeeDate": "תאריך בפורמט YYYY-MM-DD", 
-  "committeeBranch": "שם הסניף",
-  "insuredName": "שם המבוטח המלא",
-  "idNumber": "מספר תעודת זהות",
-  "injuryDate": "תאריך פגיעה YYYY-MM-DD או null",
+  "committeeType": "סוג הועדה שמצאת או 'לא נמצא'",
+  "committeeDate": "תאריך בפורמט YYYY-MM-DD או 'לא נמצא'", 
+  "committeeBranch": "שם הסניף או 'לא נמצא'",
+  "insuredName": "שם המבוטח או 'לא נמצא'",
+  "idNumber": "מספר ת.ז או 'לא נמצא'",
+  "injuryDate": "תאריך פגיעה או 'לא נמצא'",
   "committeeMembers": [
     {
       "name": "שם המשתתף",
@@ -74,33 +92,29 @@ ${text}
   ],
   "diagnoses": [
     {
-      "code": "קוד אבחנה אם יש",
+      "code": "קוד אם יש",
       "description": "תיאור האבחנה"
     }
   ],
   "decisionTable": [
     {
-      "item": "מה שמוערך או הנושא", 
-      "decision": "החלטת הועדה",
-      "percentage": מספר_האחוז_אם_יש,
-      "notes": "הערות או תקופה"
+      "item": "מה שמוערך", 
+      "decision": "החלטה",
+      "percentage": מספר_או_null,
+      "notes": "הערות"
     }
   ],
   "disabilityWeightTable": [
     {
-      "bodyPart": "איבר או סוג נכות",
-      "percentage": מספר_האחוז,
-      "type": "סוג הפגיעה", 
-      "calculation": "פירוט החישוב"
+      "bodyPart": "איבר",
+      "percentage": מספר,
+      "type": "סוג", 
+      "calculation": "חישוב"
     }
   ]
 }
 
-חשוב מאוד: 
-- חלץ כל שורה בטבלאות, אפילו אם יש הרבה
-- אם אין מידע מסוים השאר ריק או null
-- היה מדויק עם מספרים ותאריכים
-- החזר רק JSON ללא הסבר נוסף`;
+חשוב: החזר רק JSON ללא הסברים נוספים!`;
   }
   
   private parseOpenAIResponse(content: string): Partial<ProcessedDocument> {
