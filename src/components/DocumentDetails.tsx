@@ -89,13 +89,18 @@ const DocumentDetails = ({ document, children }: DocumentDetailsProps) => {
       <DialogTrigger asChild>
         {children}
       </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto" aria-describedby="document-details-description">
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle className="text-lg">{document.fileName}</DialogTitle>
-            <Button onClick={exportToExcel} variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              ייצא לאקסל
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <DialogTitle className="text-2xl font-bold text-foreground">{document.fileName}</DialogTitle>
+              <p id="document-details-description" className="text-muted-foreground mt-1">
+                פרטים מלאים של המסמך המעובד
+              </p>
+            </div>
+            <Button onClick={exportToExcel} className="bg-gradient-primary text-primary-foreground hover:opacity-90 shadow-medium" size="lg">
+              <Download className="h-5 w-5 ml-2" />
+              ייצא ל-Excel
             </Button>
           </div>
         </DialogHeader>
