@@ -1,17 +1,14 @@
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { FileText, Upload, Download, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import FileUpload from '@/components/FileUpload';
 import ApiKeyInput from '@/components/ApiKeyInput';
 import ProcessingResults from '@/components/ProcessingResults';
 import { ProcessedDocument } from '@/types/document';
-import OpenAI from 'openai';
-import * as XLSX from 'xlsx';
-// Basic PDF text extraction without external dependencies
+import { DocumentProcessor } from '@/services/documentProcessor';
+import { ExcelExporter } from '@/services/excelExporter';
 
 const Index = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -57,13 +54,8 @@ const Index = () => {
       description: `מעבד ${files.length} קבצים...`
     });
 
-    const openai = new OpenAI({
-      apiKey: apiKey,
-      dangerouslyAllowBrowser: true
-    });
-
     try {
-      console.log('Processing files:', files);
+      console.log('Processing files with new architecture:', files);
       
       // Create initial processing results
       const processingResults: ProcessedDocument[] = files.map(file => ({
@@ -83,249 +75,11 @@ const Index = () => {
       
       setResults(processingResults);
 
-      // Process each file with OpenAI
-      const processedResults = await Promise.all(
-        files.map(async (file, index) => {
-          try {
-            // Robust PDF text extraction with multiple fallback methods
-            const arrayBuffer = await file.arrayBuffer();
-            
-            let pdfText = '';
-            
-            // Method 1: Try pdfjs-dist with embedded worker
-            try {
-              const pdfjsLib = await import('pdfjs-dist');
-              
-              // Create an embedded worker to avoid CORS issues
-              const workerCode = `
-                // Minimal PDF.js worker implementation
-                importScripts('https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js');
-              `;
-              
-              try {
-                const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
-                pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
-              } catch (workerError) {
-                // If blob creation fails, use inline worker approach
-                pdfjsLib.GlobalWorkerOptions.workerSrc = `data:application/javascript;base64,${btoa(`
-                  // Minimal inline PDF.js worker
-                  self.importScripts = () => {};
-                `)}`;
-              }
-              
-              const loadingTask = pdfjsLib.getDocument({ 
-                data: arrayBuffer,
-                useWorkerFetch: false,
-                isEvalSupported: false,
-                useSystemFonts: true
-              });
-              
-              const pdf = await loadingTask.promise;
-              console.log(`PDF loaded successfully with pdfjs: ${pdf.numPages} pages`);
-              
-              const textPages: string[] = [];
-              for (let i = 1; i <= pdf.numPages; i++) {
-                try {
-                  const page = await pdf.getPage(i);
-                  const textContent = await page.getTextContent();
-                  
-                  const pageText = textContent.items
-                    .map((item: any) => {
-                      // Handle Hebrew RTL text properly
-                      let str = item.str || '';
-                      return str.trim();
-                    })
-                    .filter(str => str.length > 0)
-                    .join(' ')
-                    .trim();
-                  
-                  if (pageText) {
-                    textPages.push(pageText);
-                  }
-                } catch (pageError) {
-                  console.warn(`Error extracting text from page ${i}:`, pageError);
-                }
-              }
-              
-              pdfText = textPages.join('\n\n').trim();
-              console.log(`Extracted text with pdfjs (${pdf.numPages} pages, ${pdfText.length} chars)`);
-              
-            } catch (pdfjsError) {
-              console.warn('PDF.js extraction failed, trying fallback method:', pdfjsError);
-              
-              // Method 2: Fallback - Basic binary text extraction with Hebrew support
-              try {
-                const uint8Array = new Uint8Array(arrayBuffer);
-                const binaryString = Array.from(uint8Array, byte => String.fromCharCode(byte)).join('');
-                
-                // Extract text between specific PDF markers
-                const textRegex = /BT\s+.*?ET/gs;
-                const streamRegex = /stream\s+([\s\S]*?)\s+endstream/g;
-                
-                let extractedTexts: string[] = [];
-                
-                // Try to find text objects
-                const textMatches = binaryString.match(textRegex);
-                if (textMatches) {
-                  extractedTexts = extractedTexts.concat(textMatches);
-                }
-                
-                // Try to find stream content
-                const streamMatches = binaryString.match(streamRegex);
-                if (streamMatches) {
-                  extractedTexts = extractedTexts.concat(streamMatches.map(m => m.replace(/stream\s+|\s+endstream/g, '')));
-                }
-                
-                // Clean and filter the extracted text
-                let combinedText = extractedTexts.join(' ');
-                
-                // Remove binary data and keep readable text (Hebrew + Latin + numbers)
-                combinedText = combinedText
-                  .replace(/[^\u0590-\u05FF\u0020-\u007E\u00A0-\u024F\s\d\.\-\(\)\[\]\:\;\/\%\,\'\"\!]/g, ' ')
-                  .replace(/\s+/g, ' ')
-                  .trim();
-                
-                // Extract meaningful sentences (at least 10 characters)
-                const sentences = combinedText
-                  .split(/[\.!?\n]/)
-                  .filter(sentence => sentence.trim().length > 10)
-                  .map(sentence => sentence.trim());
-                
-                pdfText = sentences.join('. ').trim();
-                console.log(`Extracted text with fallback method (${pdfText.length} chars)`);
-                
-              } catch (fallbackError) {
-                console.error('All PDF extraction methods failed:', fallbackError);
-                throw new Error('לא ניתן לחלץ טקסט מהקובץ. נסה קובץ PDF אחר או וודא שהקובץ לא מוגן.');
-              }
-            }
-            
-            // Final validation
-            if (!pdfText || pdfText.trim().length < 20) {
-              throw new Error('הקובץ לא מכיל טקסט קריא או שהוא מוצפן. נסה קובץ PDF אחר.');
-            }
-
-            console.log(`Extracted text from ${file.name}:`, pdfText.substring(0, 500));
-
-            // Limit text length to avoid token limit (approximately 30,000 characters for safe processing)
-            const maxLength = 30000;
-            const truncatedText = pdfText.length > maxLength ? pdfText.substring(0, maxLength) + '...' : pdfText;
-
-            // Create prompt for OpenAI
-            const prompt = `
-אתה עוזר AI המתמחה בעיבוד מסמכי ועדות רפואיות ישראליות. 
-עליך לחלץ נתונים ממסמך הועדה הרפואית הבא ולהחזיר אותם בפורמט JSON מובנה.
-
-טקסט המסמך:
-${truncatedText}
-
-אנא חלץ את הנתונים הבאים והחזר אותם בפורמט JSON בדיוק כפי שמופיע במסמך:
-
-{
-  "committeeType": "סוג הועדה (כפי שמופיע בכותרת)",
-  "committeeDate": "תאריך הועדה בפורמט YYYY-MM-DD",
-  "committeeBranch": "סניף הועדה",
-  "insuredName": "שם המבוטח",
-  "idNumber": "מספר תעודת זהות",
-  "injuryDate": "תאריך הפגיעה (אם קיים)",
-  "committeeMembers": [
-    {
-      "name": "שם החבר",
-      "role": "תפקיד החבר"
-    }
-  ],
-  "diagnoses": [
-    {
-      "code": "קוד האבחנה",
-      "description": "תיאור האבחנה"
-    }
-  ],
-  "decisionTable": [
-    {
-      "item": "פריט/נושא ההחלטה",
-      "decision": "ההחלטה שהתקבלה", 
-      "percentage": אחוז_נכות_אם_קיים,
-      "notes": "הערות נוספות"
-    }
-  ],
-  "disabilityWeightTable": [
-    {
-      "bodyPart": "איבר/חלק גוף",
-      "percentage": אחוז_נכות,
-      "type": "סוג הנכות",
-      "calculation": "חישוב הנכות"
-    }
-  ]
-}
-
-הוראות חשובות:
-1. חלץ את כל הנתונים כפי שהם מופיעים במסמך המקורי
-2. אם יש טבלה - חלץ את כל השורות
-3. אם משהו לא קיים במסמך, השאר אותו ריק או null
-4. החזר רק JSON תקין ללא טקסט נוסף
-5. אל תוסיף מידע שלא מופיע במסמך
-6. שים לב לפרטים הקטנים כמו תאריכים ומספרים`;
-
-            const completion = await openai.chat.completions.create({
-              model: "gpt-5-2025-08-07",
-              messages: [{ role: "user", content: prompt }],
-              temperature: 0.1,
-            });
-
-            const content = completion.choices[0].message.content;
-            console.log(`OpenAI response for ${file.name}:`, content);
-
-            let extractedData;
-            try {
-              // Clean the response - remove markdown code blocks if present
-              let cleanContent = content || '{}';
-              if (cleanContent.startsWith('```json')) {
-                cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-              } else if (cleanContent.startsWith('```')) {
-                cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
-              }
-              
-              extractedData = JSON.parse(cleanContent);
-            } catch (parseError) {
-              console.error('JSON parse error:', parseError);
-              throw new Error('תגובה לא תקינה מ-OpenAI');
-            }
-
-            return {
-              fileName: file.name,
-              committeeType: extractedData.committeeType || 'לא זוהה',
-              committeeDate: extractedData.committeeDate || '',
-              committeeBranch: extractedData.committeeBranch || 'לא זוהה',
-              insuredName: extractedData.insuredName || 'לא זוהה',
-              idNumber: extractedData.idNumber || '',
-              injuryDate: extractedData.injuryDate || '',
-              committeeMembers: extractedData.committeeMembers || [],
-              diagnoses: extractedData.diagnoses || [],
-              decisionTable: extractedData.decisionTable || [],
-              disabilityWeightTable: extractedData.disabilityWeightTable || [],
-              processingStatus: 'completed' as const,
-            };
-
-          } catch (fileError) {
-            console.error(`Error processing file ${file.name}:`, fileError);
-            return {
-              fileName: file.name,
-              committeeType: '',
-              committeeDate: '',
-              committeeBranch: '',
-              insuredName: '',
-              idNumber: '',
-              injuryDate: '',
-              committeeMembers: [],
-              diagnoses: [],
-              decisionTable: [],
-              disabilityWeightTable: [],
-              processingStatus: 'error' as const,
-              errorMessage: `שגיאה בעיבוד הקובץ: ${fileError.message}`,
-            };
-          }
-        })
-      );
+      // Initialize document processor with API key
+      const processor = new DocumentProcessor(apiKey);
+      
+      // Process all files using the new service architecture
+      const processedResults = await processor.processMultipleFiles(files);
 
       setResults(processedResults);
       setIsProcessing(false);
@@ -361,104 +115,11 @@ ${truncatedText}
   const exportAllToExcel = () => {
     if (results.length === 0) return;
     
-    const workbook = XLSX.utils.book_new();
-    
-    // Create summary sheet
-    const summaryData = [
-      ['שם הקובץ', 'סוג הועדה', 'תאריך ועדה', 'סניף', 'שם המבוטח', 'ת.ז', 'תאריך פגיעה', 'סטטוס'],
-      ...results.map(doc => [
-        doc.fileName,
-        doc.committeeType,
-        doc.committeeDate,
-        doc.committeeBranch,
-        doc.insuredName,
-        doc.idNumber,
-        doc.injuryDate || 'לא רלוונטי',
-        doc.processingStatus === 'completed' ? 'הושלם' : doc.processingStatus === 'error' ? 'שגיאה' : 'בעיבוד'
-      ])
-    ];
-    
-    const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
-    XLSX.utils.book_append_sheet(workbook, summarySheet, 'סיכום כללי');
-    
-    // Process each completed document
-    results.forEach((doc, index) => {
-      if (doc.processingStatus === 'completed') {
-        // Main info sheet for each document
-        const mainData = [
-          ['שדה', 'ערך'],
-          ['שם הקובץ', doc.fileName],
-          ['סוג הועדה', doc.committeeType],
-          ['תאריך ועדה', doc.committeeDate],
-          ['סניף הועדה', doc.committeeBranch],
-          ['שם המבוטח', doc.insuredName],
-          ['תעודת זהות', doc.idNumber],
-          ['תאריך פגיעה', doc.injuryDate || 'לא רלוונטי']
-        ];
-        
-        const mainSheet = XLSX.utils.aoa_to_sheet(mainData);
-        const sheetName = `מסמך ${index + 1} - פרטים`;
-        XLSX.utils.book_append_sheet(workbook, mainSheet, sheetName);
-        
-        // Committee members for this document
-        if (doc.committeeMembers.length > 0) {
-          const membersData = [
-            ['שם', 'תפקיד'],
-            ...doc.committeeMembers.map(member => [member.name, member.role])
-          ];
-          const membersSheet = XLSX.utils.aoa_to_sheet(membersData);
-          XLSX.utils.book_append_sheet(workbook, membersSheet, `מסמך ${index + 1} - חברי ועדה`);
-        }
-        
-        // Diagnoses for this document
-        if (doc.diagnoses.length > 0) {
-          const diagnosesData = [
-            ['קוד אבחנה', 'תיאור'],
-            ...doc.diagnoses.map(diagnosis => [diagnosis.code, diagnosis.description])
-          ];
-          const diagnosesSheet = XLSX.utils.aoa_to_sheet(diagnosesData);
-          XLSX.utils.book_append_sheet(workbook, diagnosesSheet, `מסמך ${index + 1} - אבחנות`);
-        }
-        
-        // Decision table for this document
-        if (doc.decisionTable.length > 0) {
-          const decisionData = [
-            ['פריט', 'החלטה', 'אחוז', 'הערות'],
-            ...doc.decisionTable.map(row => [
-              row.item, 
-              row.decision, 
-              row.percentage?.toString() || '', 
-              row.notes || ''
-            ])
-          ];
-          const decisionSheet = XLSX.utils.aoa_to_sheet(decisionData);
-          XLSX.utils.book_append_sheet(workbook, decisionSheet, `מסמך ${index + 1} - החלטות`);
-        }
-        
-        // Disability weight for this document
-        if (doc.disabilityWeightTable.length > 0) {
-          const disabilityData = [
-            ['איבר', 'אחוז', 'סוג', 'חישוב'],
-            ...doc.disabilityWeightTable.map(row => [
-              row.bodyPart, 
-              row.percentage.toString(), 
-              row.type, 
-              row.calculation
-            ])
-          ];
-          const disabilitySheet = XLSX.utils.aoa_to_sheet(disabilityData);
-          XLSX.utils.book_append_sheet(workbook, disabilitySheet, `מסמך ${index + 1} - שקלול נכות`);
-        }
-      }
-    });
-    
-    // Save file
-    const timestamp = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(workbook, `ועדות_רפואיות_מעובדות_${timestamp}.xlsx`);
+    ExcelExporter.exportToExcel(results);
     
     toast({
       title: "הורד בהצלחה",
-      description: "הקובץ נשמר בהצלחה"
+      description: "הקובץ נשמר בהצלחה עם מיפוי משופר"
     });
   };
 
