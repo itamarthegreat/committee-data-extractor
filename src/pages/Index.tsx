@@ -127,71 +127,84 @@ const Index = () => {
     <div className="min-h-screen bg-gradient-subtle p-6" dir="rtl">
       <div className="max-w-6xl mx-auto space-y-8">
         {/* Header */}
-        <div className="text-center space-y-4">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <FileText className="h-8 w-8 text-primary" />
-            <h1 className="text-4xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-              מערכת עיבוד מסמכי ועדות
-            </h1>
+        <div className="text-center space-y-6 mb-12">
+          <div className="flex items-center justify-center gap-4 mb-6">
+            <div className="p-3 rounded-2xl bg-gradient-primary">
+              <FileText className="h-10 w-10 text-white" />
+            </div>
+            <div>
+              <h1 className="text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+                מערכת עיבוד ועדות רפואיות
+              </h1>
+              <p className="text-xl text-muted-foreground mt-2">
+                חילוץ אוטומטי של נתונים ממסמכי ביטוח לאומי באמצעות AI
+              </p>
+            </div>
           </div>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            העלה קבצי PDF של מסמכי ועדות והמערכת תחלץ אוטומטית את כל הנתונים הרלוונטיים באמצעות AI
-          </p>
         </div>
 
         {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Panel - Settings */}
-          <div className="space-y-6">
-            <Card className="p-6 shadow-soft">
-              <div className="flex items-center gap-2 mb-4">
-                <Settings className="h-5 w-5 text-primary" />
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
+          {/* Left Panel - Controls */}
+          <div className="xl:col-span-1 space-y-6">
+            <Card className="p-6 shadow-soft border-0 bg-card/50 backdrop-blur-sm">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Settings className="h-5 w-5 text-primary" />
+                </div>
                 <h2 className="text-xl font-semibold">הגדרות</h2>
               </div>
               <ApiKeyInput value={apiKey} onChange={handleApiKeyChange} />
             </Card>
 
-            <Card className="p-6 shadow-soft">
-              <div className="flex items-center gap-2 mb-4">
-                <Upload className="h-5 w-5 text-primary" />
+            <Card className="p-6 shadow-soft border-0 bg-card/50 backdrop-blur-sm">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Upload className="h-5 w-5 text-primary" />
+                </div>
                 <h2 className="text-xl font-semibold">העלאת קבצים</h2>
               </div>
               <FileUpload files={files} onFilesChange={handleFilesChange} />
+              
+              {/* Process Button */}
+              <Button 
+                onClick={processDocuments}
+                disabled={isProcessing || !apiKey || files.length === 0}
+                className="w-full h-12 text-lg font-semibold bg-gradient-primary hover:opacity-90 transition-smooth mt-6"
+                size="lg"
+              >
+                {isProcessing ? (
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    מעבד מסמכים...
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-5 w-5" />
+                    עבד מסמכים
+                  </div>
+                )}
+              </Button>
             </Card>
-
-            {/* Process Button */}
-            <Button 
-              onClick={processDocuments}
-              disabled={isProcessing || !apiKey || files.length === 0}
-              className="w-full h-12 text-lg font-semibold bg-gradient-primary hover:opacity-90 transition-smooth"
-              size="lg"
-            >
-              {isProcessing ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  מעבד...
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  עבד מסמכים
-                </div>
-              )}
-            </Button>
           </div>
 
           {/* Right Panel - Results */}
-          <div className="lg:col-span-2">
-            <Card className="p-6 shadow-soft min-h-[600px]">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-2">
-                  <Download className="h-5 w-5 text-primary" />
-                  <h2 className="text-xl font-semibold">תוצאות עיבוד</h2>
+          <div className="xl:col-span-3">
+            <Card className="p-8 shadow-soft border-0 bg-card/50 backdrop-blur-sm min-h-[700px]">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-primary/10">
+                    <Download className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-semibold">תוצאות עיבוד</h2>
+                    <p className="text-muted-foreground">נתונים מחולצים ממסמכי הועדות</p>
+                  </div>
                 </div>
                 {results.length > 0 && (
-                  <Button variant="outline" className="gap-2" onClick={exportAllToExcel}>
-                    <Download className="h-4 w-4" />
-                    ייצא לExcel
+                  <Button variant="outline" className="gap-3 h-11 px-6" onClick={exportAllToExcel}>
+                    <Download className="h-5 w-5" />
+                    ייצא ל-Excel
                   </Button>
                 )}
               </div>

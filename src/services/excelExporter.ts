@@ -8,27 +8,27 @@ export class ExcelExporter {
     
     const workbook = XLSX.utils.book_new();
     
-    // Create summary sheet with enhanced mapping
-    this.createSummarySheet(workbook, documents);
+    // Create enhanced summary sheet
+    this.createEnhancedSummarySheet(workbook, documents);
     
-    // Create detailed sheets for each document
+    // Create detailed sheets for each document  
     documents.forEach((doc, index) => {
       if (doc.processingStatus === 'completed') {
-        this.createDocumentSheets(workbook, doc, index);
+        this.createEnhancedDocumentSheets(workbook, doc, index);
       }
     });
     
     // Save file with timestamp
     const timestamp = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(workbook, `ועדות_רפואיות_מעובדות_${timestamp}.xlsx`);
+    XLSX.writeFile(workbook, `ועדות_רפואיות_${timestamp}.xlsx`);
   }
   
-  private static createSummarySheet(workbook: XLSX.WorkBook, documents: ProcessedDocument[]): void {
+  private static createEnhancedSummarySheet(workbook: XLSX.WorkBook, documents: ProcessedDocument[]): void {
     const summaryData = [
       [
-        'מס"ד', 'שם הקובץ', 'סוג הועדה', 'תאריך ועדה', 'סניף', 
-        'שם המבוטח', 'ת.ז', 'תאריך פגיעה', 'מספר אבחנות', 
-        'מספר החלטות', 'מספר איברים בשקלול', 'סטטוס עיבוד'
+        'מס"ד', 'שם קובץ', 'סוג ועדה', 'תאריך ועדה', 'סניף', 
+        'שם מבוטח', 'ת.ז', 'תאריך פגיעה', 'חברי ועדה', 
+        'מס\' אבחנות', 'מס\' החלטות', 'מס\' שקלולים', 'סטטוס'
       ],
       ...documents.map((doc, index) => [
         index + 1,
@@ -38,12 +38,13 @@ export class ExcelExporter {
         doc.committeeBranch,
         doc.insuredName,
         doc.idNumber,
-        doc.injuryDate || 'לא רלוונטי',
+        doc.injuryDate || '-',
+        doc.committeeMembers.length,
         doc.diagnoses.length,
         doc.decisionTable.length,
         doc.disabilityWeightTable.length,
-        doc.processingStatus === 'completed' ? 'הושלם בהצלחה' : 
-        doc.processingStatus === 'error' ? `שגיאה: ${doc.errorMessage}` : 'בעיבוד'
+        doc.processingStatus === 'completed' ? '✓ הושלם' : 
+        doc.processingStatus === 'error' ? '✗ שגיאה' : '⏳ בעיבוד'
       ])
     ];
     
@@ -68,7 +69,7 @@ export class ExcelExporter {
     XLSX.utils.book_append_sheet(workbook, summarySheet, 'סיכום כללי');
   }
   
-  private static createDocumentSheets(workbook: XLSX.WorkBook, doc: ProcessedDocument, index: number): void {
+  private static createEnhancedDocumentSheets(workbook: XLSX.WorkBook, doc: ProcessedDocument, index: number): void {
     const docNum = index + 1;
     
     // Main document details
