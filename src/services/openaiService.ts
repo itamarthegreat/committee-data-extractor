@@ -12,11 +12,13 @@ export class OpenAIService {
   }
   
   async processDocumentText(text: string, fileName: string): Promise<Partial<ProcessedDocument>> {
-    // Limit text length for OpenAI processing
-    const maxLength = 30000;
+    // Limit text length and add debugging
+    const maxLength = 25000; // Reduced for better processing
     const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
     
-    const prompt = this.createExtractionPrompt(truncatedText);
+    console.log(`Processing ${fileName} - Text sample:`, truncatedText.substring(0, 1000));
+    
+    const prompt = this.createImprovedExtractionPrompt(truncatedText);
     
     try {
       const completion = await this.openai.chat.completions.create({
@@ -35,60 +37,66 @@ export class OpenAIService {
     }
   }
   
-  private createExtractionPrompt(text: string): string {
+  private createImprovedExtractionPrompt(text: string): string {
     return `
-אתה עוזר AI המתמחה בעיבוד מסמכי ועדות רפואיות ישראליות. 
-עליך לחלץ נתונים ממסמך הועדה הרפואית הבא ולהחזיר אותם בפורמט JSON מובנה.
+אתה מומחה לעיבוד מסמכי ועדות רפואיות בעברית. המשימה שלך היא לחלץ מידע מובנה מהמסמך הבא.
 
-טקסט המסמך:
+המסמך:
 ${text}
 
-אנא חלץ את הנתונים הבאים והחזר אותם בפורמט JSON בדיוק כפי שמופיע במסמך:
+חלץ את המידע הבא ללא יוצא מן הכלל - אפילו אם חלק מהמידע לא ברור, נסה למצוא את הקרוב ביותר:
+
+1. סוג הועדה - חפש ביטויים כמו "ועדה רפואית", "ועדת נכות", "ועדה מקצועית"
+2. תאריך הועדה - חפש תאריכים בפורמט יום/חודש/שנה או שנה-חודש-יום
+3. סניף - חפש שמות ערים או אזורים
+4. שם המבוטח - שמות פרטיים ומשפחה בעברית
+5. תעודת זהות - רצף של 9 ספרות
+6. תאריך פגיעה - תאריך קודם לתאריך הועדה
+7. חברי ועדה - רשימת שמות עם תארים רפואיים
+8. אבחנות - קודי מחלות וטקסט אבחנה
+9. החלטות - טבלאות עם אחוזי נכות והחלטות
+10. שקלול נכות - פירוט לפי איברים ואחוזים
+
+החזר בפורמט JSON המדויק הזה (ללא טקסט נוסף):
 
 {
-  "committeeType": "סוג הועדה (כפי שמופיע בכותרת)",
-  "committeeDate": "תאריך הועדה בפורמט YYYY-MM-DD",
-  "committeeBranch": "סניף הועדה",
-  "insuredName": "שם המבוטח",
-  "idNumber": "מספר תעודת זהות",
-  "injuryDate": "תאריך הפגיעה (אם קיים)",
+  "committeeType": "סוג הועדה שמצאת",
+  "committeeDate": "תאריך בפורמט YYYY-MM-DD",
+  "committeeBranch": "שם הסניף",
+  "insuredName": "שם המבוטח המלא",
+  "idNumber": "תעודת זהות",
+  "injuryDate": "תאריך פגיעה בפורמט YYYY-MM-DD",
   "committeeMembers": [
     {
-      "name": "שם החבר",
-      "role": "תפקיד החבר"
+      "name": "שם חבר הועדה",
+      "role": "תפקיד (רופא/פסיכולוג וכו')"
     }
   ],
   "diagnoses": [
     {
-      "code": "קוד האבחנה",
+      "code": "קוד אבחנה אם יש",
       "description": "תיאור האבחנה"
     }
   ],
   "decisionTable": [
     {
-      "item": "פריט/נושא ההחלטה",
-      "decision": "ההחלטה שהתקבלה", 
-      "percentage": אחוז_נכות_אם_קיים,
-      "notes": "הערות נוספות"
+      "item": "מה מוערך",
+      "decision": "החלטת הועדה",
+      "percentage": אחוז_אם_יש,
+      "notes": "הערות"
     }
   ],
   "disabilityWeightTable": [
     {
-      "bodyPart": "איבר/חלק גוף",
+      "bodyPart": "איבר גוף",
       "percentage": אחוז_נכות,
       "type": "סוג הנכות",
-      "calculation": "חישוב הנכות"
+      "calculation": "חישוב"
     }
   ]
 }
 
-הוראות חשובות:
-1. חלץ את כל הנתונים כפי שהם מופיעים במסמך המקורי
-2. אם יש טבלה - חלץ את כל השורות
-3. אם משהו לא קיים במסמך, השאר אותו ריק או null
-4. החזר רק JSON תקין ללא טקסט נוסף
-5. אל תוסיף מידע שלא מופיע במסמך
-6. שים לב לפרטים הקטנים כמו תאריכים ומספרים`;
+חשוב: אפילו אם לא מוצא מידע מסוים, נסה להעריך או לחלץ מקורב. אל תחזיר null אלא אם כן המידע באמת לא קיים במסמך.`;
   }
   
   private parseOpenAIResponse(content: string): Partial<ProcessedDocument> {
