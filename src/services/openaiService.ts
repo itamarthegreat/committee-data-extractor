@@ -22,7 +22,6 @@ export class OpenAIService {
       const completion = await this.openai.chat.completions.create({
         model: "gpt-5-2025-08-07",
         messages: [{ role: "user", content: prompt }],
-        temperature: 0.1,
       });
 
       const content = completion.choices[0].message.content;
