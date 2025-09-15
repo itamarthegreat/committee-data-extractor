@@ -4,13 +4,14 @@ export class PdfService {
   static async extractTextFromPdf(file: File): Promise<string> {
     try {
       const arrayBuffer = await file.arrayBuffer();
+      let pdfjsLib: any = null;
       
       // Method 1: Try pdfjs-dist first with better configuration
       try {
-        const pdfjsLib = await import('pdfjs-dist');
+        pdfjsLib = await import('pdfjs-dist');
         
-        // Configure worker properly
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+        // Configure worker properly - use more reliable CDN
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
         
         console.log('Loading PDF with pdfjs-dist...');
         
@@ -19,7 +20,10 @@ export class PdfService {
           useWorkerFetch: false,
           isEvalSupported: false,
           useSystemFonts: true,
-          verbosity: 0
+          verbosity: 0,
+          standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/standard_fonts/`,
+          cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
+          cMapPacked: true
         });
         
         const pdf = await loadingTask.promise;
@@ -63,31 +67,114 @@ export class PdfService {
         }
         
       } catch (pdfjsError) {
-        console.warn('pdfjs-dist failed, trying binary extraction:', pdfjsError);
+        console.warn('pdfjs-dist failed, trying alternative approach:', pdfjsError);
+        
+        // Try alternative PDF.js configuration  
+        try {
+          if (!pdfjsLib) {
+            pdfjsLib = await import('pdfjs-dist');
+          }
+          
+          const altLoadingTask = pdfjsLib.getDocument({
+            data: arrayBuffer,
+            disableAutoFetch: true,
+            disableStream: true,
+            disableFontFace: true,
+            useSystemFonts: false,
+            verbosity: 0
+          });
+          
+          const altPdf = await altLoadingTask.promise;
+          const altTextPages: string[] = [];
+          
+          for (let i = 1; i <= altPdf.numPages; i++) {
+            try {
+              const page = await altPdf.getPage(i);
+              const textContent = await page.getTextContent({
+                normalizeWhitespace: true,
+                disableCombineTextItems: false
+              });
+              
+              const pageText = textContent.items
+                .map((item: any) => item.str || '')
+                .join(' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+                
+              if (pageText && pageText.length > 5) {
+                altTextPages.push(pageText);
+              }
+            } catch (pageError) {
+              console.warn(`Error extracting from page ${i}:`, pageError);
+            }
+          }
+          
+          const altExtractedText = altTextPages.join('\n\n').trim();
+          if (altExtractedText && altExtractedText.length > 20) {
+            console.log('Alternative PDF.js approach succeeded');
+            return altExtractedText;
+          }
+          
+        } catch (altError) {
+          console.warn('Alternative PDF.js approach also failed:', altError);
+        }
       }
       
-      // Method 2: Enhanced binary text extraction 
+      // Method 2: Enhanced binary text extraction for Hebrew PDFs
       console.log('Attempting enhanced binary text extraction...');
       const uint8Array = new Uint8Array(arrayBuffer);
       
-      // Convert to string for analysis
+      // Try UTF-8 decoding first
+      try {
+        const decoder = new TextDecoder('utf-8', { fatal: false });
+        const decodedText = decoder.decode(uint8Array);
+        
+        // Look for readable Hebrew and English text
+        const readableText = decodedText
+          .replace(/[\x00-\x1F\x7F-\x9F]/g, ' ') // Remove control characters
+          .replace(/\s+/g, ' ')
+          .trim();
+          
+        // Extract meaningful content using patterns
+        const hebrewPattern = /[\u0590-\u05FF](?:\s*[\u0590-\u05FF\u0020-\u007E])+/g;
+        const englishPattern = /[A-Za-z](?:\s*[A-Za-z0-9\s])+/g;
+        const numberPattern = /\d{2,}/g;
+        
+        const hebrewMatches = readableText.match(hebrewPattern) || [];
+        const englishMatches = readableText.match(englishPattern) || [];
+        const numberMatches = readableText.match(numberPattern) || [];
+        
+        const extractedContent = [
+          ...hebrewMatches,
+          ...englishMatches.filter(text => text.length > 2),
+          ...numberMatches
+        ].join(' ').replace(/\s+/g, ' ').trim();
+        
+        if (extractedContent && extractedContent.length > 50) {
+          console.log(`UTF-8 decoding succeeded: ${extractedContent.length} characters`);
+          return extractedContent;
+        }
+      } catch (utf8Error) {
+        console.warn('UTF-8 decoding failed:', utf8Error);
+      }
+      
+      // Method 3: Binary string analysis as last resort
       let binaryString = '';
-      for (let i = 0; i < uint8Array.length; i++) {
+      for (let i = 0; i < Math.min(uint8Array.length, 500000); i++) { // Limit to 500KB
         binaryString += String.fromCharCode(uint8Array[i]);
       }
       
-      console.log('Binary string length:', binaryString.length);
+      console.log('Binary string analysis - length:', binaryString.length);
       
-      // Method 2a: Look for text objects with better regex
+      // Enhanced extraction patterns for Hebrew documents
       let extractedTexts: string[] = [];
       
-      // Enhanced text extraction patterns
+      // Look for text between specific PDF markers
       const patterns = [
-        /\((.*?)\)/g,           // Text in parentheses  
-        /\[(.*?)\]/g,           // Text in brackets
-        /BT\s+(.*?)\s+ET/gs,    // Text objects
-        /Tj\s*(.+?)(?=\s|$)/g,  // Text drawing commands
-        /TJ\s*\[(.*?)\]/g       // Array-based text
+        /\(([\u0590-\u05FF\u0020-\u007E\s]+?)\)/g,  // Text in parentheses (Hebrew + Latin)
+        /\[([\u0590-\u05FF\u0020-\u007E\s]+?)\]/g,  // Text in brackets  
+        /BT\s+([\s\S]*?)\s+ET/g,                    // PDF text objects
+        /[\u0590-\u05FF][\u0590-\u05FF\u0020\s]{2,}/g // Hebrew text sequences
       ];
       
       for (const pattern of patterns) {
@@ -95,45 +182,43 @@ export class PdfService {
         if (matches) {
           for (const match of matches) {
             let cleaned = match
-              .replace(/BT\s+|ET\s*|Tj\s*|\(|\)|\[|\]/g, '')
+              .replace(/[BT|ET|\(|\)|\[|\]]/g, '')
+              .replace(/\\[0-9]{3}/g, '') // Remove octal characters
               .replace(/\s+/g, ' ')
               .trim();
             
-            // Keep only text with Hebrew/Latin characters
-            if (/[\u0590-\u05FF\u0020-\u007E]/.test(cleaned) && cleaned.length > 2) {
+            // Keep text with Hebrew or meaningful Latin content
+            if ((cleaned.length > 3) && 
+                (/[\u0590-\u05FF]/.test(cleaned) || 
+                 (/[A-Za-z]{3,}/.test(cleaned) && cleaned.length > 5))) {
               extractedTexts.push(cleaned);
             }
           }
         }
       }
       
-      // Method 2b: Look for readable UTF-8 sequences
-      const utf8Regex = /[\u0590-\u05FF\u0020-\u007E\s]{3,}/g;
-      const utf8Matches = binaryString.match(utf8Regex);
-      if (utf8Matches) {
-        extractedTexts = extractedTexts.concat(utf8Matches);
-      }
-      
-      // Clean and join all extracted text
+      // Join and clean the extracted text
       let finalText = extractedTexts
-        .map(text => text.trim())
-        .filter(text => text.length > 2)
+        .filter((text, index, array) => array.indexOf(text) === index) // Remove duplicates
         .join(' ')
         .replace(/\s+/g, ' ')
         .trim();
       
       console.log(`Binary extraction yielded ${finalText.length} characters`);
-      console.log('Sample extracted text:', finalText.substring(0, 300));
+      if (finalText.length > 0) {
+        console.log('Sample extracted text:', finalText.substring(0, 200));
+      }
       
       if (finalText && finalText.length > 20) {
         return finalText;
       }
       
-      throw new Error('לא ניתן לחלץ טקסט קריא מהקובץ. הקובץ עלול להיות מוגן, מוצפן או להכיל רק תמונות.');
+      // If all else fails, provide a helpful error message
+      throw new Error('לא ניתן לחלץ טקסט קריא מהקובץ. אנא וודא שהקובץ אינו מוגן בסיסמה ומכיל טקסט (לא רק תמונות).');
       
     } catch (error) {
       console.error('PDF extraction error:', error);
-      throw new Error(`שגיאה בחילוץ טקסט: ${error.message}`);
+      throw new Error(`שגיאה בחילוץ טקסט מהקובץ: ${error.message}`);
     }
   }
   

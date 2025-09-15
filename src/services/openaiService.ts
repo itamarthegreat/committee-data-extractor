@@ -12,9 +12,9 @@ export class OpenAIService {
   }
   
   async processDocumentText(text: string, fileName: string): Promise<Partial<ProcessedDocument>> {
-    // Limit text length and add debugging
-    const maxLength = 20000; // Further reduced for better processing
-    const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+      // Limit text length for better OpenAI processing
+      const maxLength = 15000; // Reduced further for more focused processing
+      const truncatedText = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
     
     console.log(`Processing ${fileName}:`);
     console.log(`- Full text length: ${text.length} chars`);
