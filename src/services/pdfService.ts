@@ -124,38 +124,69 @@ export class PdfService {
       console.log('Attempting enhanced binary text extraction...');
       const uint8Array = new Uint8Array(arrayBuffer);
       
-      // Try UTF-8 decoding first
-      try {
-        const decoder = new TextDecoder('utf-8', { fatal: false });
-        const decodedText = decoder.decode(uint8Array);
-        
-        // Look for readable Hebrew and English text
-        const readableText = decodedText
-          .replace(/[\x00-\x1F\x7F-\x9F]/g, ' ') // Remove control characters
-          .replace(/\s+/g, ' ')
-          .trim();
+      // Try multiple decoding methods for Hebrew PDFs
+      const decodingMethods = [
+        { name: 'UTF-8', decoder: new TextDecoder('utf-8', { fatal: false }) },
+        { name: 'Windows-1255', decoder: new TextDecoder('windows-1255', { fatal: false }) },
+        { name: 'ISO-8859-8', decoder: new TextDecoder('iso-8859-8', { fatal: false }) },
+        { name: 'UTF-16LE', decoder: new TextDecoder('utf-16le', { fatal: false }) },
+        { name: 'UTF-16BE', decoder: new TextDecoder('utf-16be', { fatal: false }) }
+      ];
+      
+      for (const method of decodingMethods) {
+        try {
+          console.log(`Trying ${method.name} decoding...`);
+          const decodedText = method.decoder.decode(uint8Array);
           
-        // Extract meaningful content using patterns
-        const hebrewPattern = /[\u0590-\u05FF](?:\s*[\u0590-\u05FF\u0020-\u007E])+/g;
-        const englishPattern = /[A-Za-z](?:\s*[A-Za-z0-9\s])+/g;
-        const numberPattern = /\d{2,}/g;
-        
-        const hebrewMatches = readableText.match(hebrewPattern) || [];
-        const englishMatches = readableText.match(englishPattern) || [];
-        const numberMatches = readableText.match(numberPattern) || [];
-        
-        const extractedContent = [
-          ...hebrewMatches,
-          ...englishMatches.filter(text => text.length > 2),
-          ...numberMatches
-        ].join(' ').replace(/\s+/g, ' ').trim();
-        
-        if (extractedContent && extractedContent.length > 50) {
-          console.log(`UTF-8 decoding succeeded: ${extractedContent.length} characters`);
-          return extractedContent;
+          // Clean and analyze the decoded text
+          let cleanText = decodedText
+            .replace(/[\x00-\x08\x0B-\x1F\x7F-\x9F]/g, ' ') // Remove most control chars but keep \t and \n
+            .replace(/\uFEFF/g, '') // Remove BOM
+            .replace(/\s+/g, ' ')
+            .trim();
+          
+          // Look for Hebrew words (2+ Hebrew characters together)
+          const hebrewWords = cleanText.match(/[\u0590-\u05FF]{2,}/g) || [];
+          
+          // Look for English words (3+ Latin characters)  
+          const englishWords = cleanText.match(/[A-Za-z]{3,}/g) || [];
+          
+          // Look for numbers that could be dates or IDs
+          const numbers = cleanText.match(/\d{2,}/g) || [];
+          
+          // Look for specific Hebrew keywords
+          const hebrewKeywords = [
+            'ביטוח', 'לאומי', 'ועדה', 'רפואי', 'נכות', 'מבוטח', 
+            'זהות', 'תאריך', 'סניף', 'החלטה', 'אבחנה', 'אחוז'
+          ];
+          
+          let foundKeywords = 0;
+          for (const keyword of hebrewKeywords) {
+            if (cleanText.includes(keyword)) {
+              foundKeywords++;
+            }
+          }
+          
+          console.log(`${method.name}: Hebrew words: ${hebrewWords.length}, English: ${englishWords.length}, Keywords: ${foundKeywords}`);
+          
+          // If we found Hebrew keywords or substantial text, this is likely the right encoding
+          if (foundKeywords > 0 || (hebrewWords.length > 5 && englishWords.length > 3)) {
+            const extractedContent = [
+              ...hebrewWords,
+              ...englishWords.filter(word => word.length > 2),
+              ...numbers
+            ].join(' ').replace(/\s+/g, ' ').trim();
+            
+            if (extractedContent.length > 50) {
+              console.log(`${method.name} decoding succeeded with ${extractedContent.length} characters`);
+              console.log('Sample:', extractedContent.substring(0, 300));
+              return extractedContent;
+            }
+          }
+          
+        } catch (error) {
+          console.warn(`${method.name} decoding failed:`, error);
         }
-      } catch (utf8Error) {
-        console.warn('UTF-8 decoding failed:', utf8Error);
       }
       
       // Method 3: Binary string analysis as last resort

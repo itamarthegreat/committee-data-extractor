@@ -22,6 +22,14 @@ export class OpenAIService {
     console.log(`- Text sample (first 500 chars):`, truncatedText.substring(0, 500));
     console.log(`- Text sample (last 500 chars):`, truncatedText.substring(Math.max(0, truncatedText.length - 500)));
     
+    // Check if text looks corrupted or binary
+    const readableRatio = this.calculateReadableRatio(truncatedText);
+    console.log(`Text readability ratio: ${readableRatio}%`);
+    
+    if (readableRatio < 10) {
+      throw new Error('הטקסט שנחלץ מהקובץ אינו קריא. ייתכן שהקובץ מוצפן, מוגן או מכיל רק תמונות שצריכות OCR.');
+    }
+    
     const prompt = this.createImprovedExtractionPrompt(truncatedText);
     
     try {
@@ -141,5 +149,25 @@ ${text}
       console.error('JSON parse error:', parseError);
       throw new Error('תגובה לא תקינה מ-OpenAI');
     }
+  }
+  
+  private calculateReadableRatio(text: string): number {
+    if (!text || text.length === 0) return 0;
+    
+    // Count readable characters (Hebrew, Latin, digits, common punctuation)
+    const readableChars = text.match(/[\u0590-\u05FF\u0020-\u007E\s]/g) || [];
+    
+    // Count Hebrew words specifically
+    const hebrewWords = text.match(/[\u0590-\u05FF]{2,}/g) || [];
+    
+    // Count English words
+    const englishWords = text.match(/[A-Za-z]{2,}/g) || [];
+    
+    const ratio = (readableChars.length / text.length) * 100;
+    
+    // Boost ratio if we have actual words
+    const wordBoost = Math.min(hebrewWords.length + englishWords.length, 50);
+    
+    return Math.min(ratio + wordBoost, 100);
   }
 }
