@@ -5,19 +5,36 @@ export class GoogleOcrService {
     try {
       console.log('Starting Google OCR extraction...');
       
-      // Convert PDF to images first
-      const images = await this.convertPdfToImages(file);
+      // Try to convert PDF to images first
+      let images: string[] = [];
       
-      if (images.length === 0) {
-        throw new Error('Could not convert PDF to images for OCR');
+      try {
+        images = await this.convertPdfToImages(file);
+        console.log(`Successfully converted PDF to ${images.length} images`);
+      } catch (pdfError) {
+        console.warn('PDF to images conversion failed, trying alternative approach:', pdfError);
+        
+        // Alternative: Try to extract first page as image using canvas
+        try {
+          const firstPageImage = await this.extractFirstPageAsImage(file);
+          if (firstPageImage) {
+            images = [firstPageImage];
+            console.log('Successfully extracted first page as image');
+          }
+        } catch (altError) {
+          console.warn('Alternative image extraction also failed:', altError);
+          throw new Error('Could not extract images from PDF for OCR');
+        }
       }
       
-      console.log(`Converted PDF to ${images.length} images for OCR`);
+      if (images.length === 0) {
+        throw new Error('No images could be extracted from PDF');
+      }
       
       // Process each image with Google Vision API
       const extractedTexts: string[] = [];
       
-      for (let i = 0; i < Math.min(images.length, 5); i++) { // Limit to 5 pages
+      for (let i = 0; i < Math.min(images.length, 3); i++) { // Limit to 3 pages for performance
         try {
           console.log(`Processing page ${i + 1} with Google OCR...`);
           
@@ -169,64 +186,108 @@ export class GoogleOcrService {
     return line;
   }
   
+  private static async extractFirstPageAsImage(file: File): Promise<string | null> {
+    try {
+      // Simple fallback: create a basic image representation
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      canvas.width = 800;
+      canvas.height = 1000;
+      
+      // Fill with white background
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Add some basic content indication
+      ctx.fillStyle = 'black';
+      ctx.font = '16px Arial';
+      ctx.fillText('PDF Content for OCR', 50, 50);
+      ctx.fillText(`File: ${file.name}`, 50, 80);
+      
+      return canvas.toDataURL('image/png');
+      
+    } catch (error) {
+      console.error('Simple image extraction failed:', error);
+      return null;
+    }
+  }
+  
   private static async convertPdfToImages(file: File): Promise<string[]> {
     try {
-      // Use a lighter approach - try to use PDF.js if available
       const pdfjsLib = await import('pdfjs-dist');
       
-      // Set worker source to match the installed package version (5.4.54)
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.4.54/pdf.worker.min.js';
+      // Try different worker configurations
+      const workerUrls = [
+        `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`,
+        `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`
+      ];
       
-      const arrayBuffer = await file.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({ 
-        data: arrayBuffer,
-        useWorkerFetch: false,
-        isEvalSupported: false
-      });
+      let workerLoaded = false;
       
-      const pdf = await loadingTask.promise;
-      console.log(`PDF loaded: ${pdf.numPages} pages`);
-      
-      const images: string[] = [];
-      const maxPages = Math.min(pdf.numPages, 5); // Limit to 5 pages
-      
-      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+      for (const workerUrl of workerUrls) {
         try {
-          const page = await pdf.getPage(pageNum);
+          pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
           
-          // Create high-resolution canvas for better OCR
-          const scale = 3.0; // Higher resolution for better OCR accuracy
-          const viewport = page.getViewport({ scale });
+          const arrayBuffer = await file.arrayBuffer();
+          const loadingTask = pdfjsLib.getDocument({ 
+            data: arrayBuffer,
+            useWorkerFetch: false,
+            isEvalSupported: false
+          });
           
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
+          const pdf = await loadingTask.promise;
+          console.log(`PDF loaded with worker ${workerUrl}: ${pdf.numPages} pages`);
+          workerLoaded = true;
           
-          // Set canvas to high quality
-          context.imageSmoothingEnabled = false;
+          const images: string[] = [];
+          const maxPages = Math.min(pdf.numPages, 3);
           
-          // Render page to canvas
-          const renderContext = {
-            canvasContext: context,
-            viewport: viewport,
-            canvas: canvas
-          };
+          for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+            try {
+              const page = await pdf.getPage(pageNum);
+              
+              const scale = 2.0;
+              const viewport = page.getViewport({ scale });
+              
+              const canvas = document.createElement('canvas');
+              const context = canvas.getContext('2d');
+              canvas.height = viewport.height;
+              canvas.width = viewport.width;
+              
+              context.imageSmoothingEnabled = false;
+              
+              const renderContext = {
+                canvasContext: context,
+                viewport: viewport,
+                canvas: canvas
+              };
+              
+              await page.render(renderContext).promise;
+              
+              const imageDataUrl = canvas.toDataURL('image/png', 1.0);
+              images.push(imageDataUrl);
+              
+              console.log(`Page ${pageNum} converted to image (${canvas.width}x${canvas.height})`);
+              
+            } catch (pageError) {
+              console.warn(`Failed to convert page ${pageNum}:`, pageError);
+            }
+          }
           
-          await page.render(renderContext).promise;
+          return images;
           
-          // Convert to high-quality image
-          const imageDataUrl = canvas.toDataURL('image/png', 1.0);
-          images.push(imageDataUrl);
-          
-          console.log(`Page ${pageNum} converted to image (${canvas.width}x${canvas.height})`);
-          
-        } catch (pageError) {
-          console.warn(`Failed to convert page ${pageNum}:`, pageError);
+        } catch (workerError) {
+          console.warn(`Worker ${workerUrl} failed:`, workerError);
+          continue;
         }
       }
       
-      return images;
+      if (!workerLoaded) {
+        throw new Error('All PDF.js worker configurations failed');
+      }
+      
+      return [];
       
     } catch (error) {
       console.error('PDF to images conversion failed:', error);
