@@ -1,4 +1,6 @@
-// Advanced PDF processing service with enhanced Hebrew text extraction
+// Advanced PDF processing service with OCR fallback for Hebrew documents
+import { createWorker } from 'tesseract.js';
+
 export class PdfService {
   
   static async extractTextFromPdf(file: File): Promise<string> {
@@ -6,11 +8,11 @@ export class PdfService {
       const arrayBuffer = await file.arrayBuffer();
       let pdfjsLib: any = null;
       
-      // Method 1: Try pdfjs-dist first with better configuration
+      // Method 1: Try pdfjs-dist first with optimized Hebrew settings
       try {
         pdfjsLib = await import('pdfjs-dist');
         
-        // Configure worker properly - use jsDelivr CDN
+        // Configure worker properly
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
         
         console.log('Loading PDF with pdfjs-dist...');
@@ -30,17 +32,20 @@ export class PdfService {
         console.log(`PDF loaded successfully: ${pdf.numPages} pages`);
         
         const textPages: string[] = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
+        for (let i = 1; i <= Math.min(pdf.numPages, 5); i++) { // Process first 5 pages max
           try {
             const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
+            const textContent = await page.getTextContent({
+              normalizeWhitespace: true,
+              disableCombineTextItems: false
+            });
             
             console.log(`Page ${i} has ${textContent.items.length} text items`);
             
             const pageText = textContent.items
               .map((item: any) => {
                 if (item.str && item.str.trim()) {
-                  return this.cleanAndReconstructHebrewText(item.str.trim());
+                  return item.str.trim();
                 }
                 return '';
               })
@@ -48,10 +53,17 @@ export class PdfService {
               .join(' ')
               .trim();
             
-            console.log(`Page ${i} extracted text:`, pageText.substring(0, 200));
+            console.log(`Page ${i} raw text:`, pageText.substring(0, 200));
             
-            if (pageText && pageText.length > 5) {
-              textPages.push(pageText);
+            // Check if the extracted text looks readable
+            const readabilityScore = this.calculateTextReadability(pageText);
+            console.log(`Page ${i} readability score:`, readabilityScore);
+            
+            if (readabilityScore > 0.3) { // If text seems readable (30% readable characters)
+              const cleanText = this.cleanHebrewText(pageText);
+              if (cleanText.length > 10) {
+                textPages.push(cleanText);
+              }
             }
           } catch (pageError) {
             console.warn(`Error extracting text from page ${i}:`, pageError);
@@ -60,104 +72,100 @@ export class PdfService {
         
         const extractedText = textPages.join('\n\n').trim();
         console.log(`Total extracted text: ${extractedText.length} characters`);
-        console.log(`Sample:`, extractedText.substring(0, 500));
         
-        if (extractedText && extractedText.length > 20) {
-          return this.finalHebrewTextCleanup(extractedText);
+        if (extractedText && extractedText.length > 50 && this.containsHebrewContent(extractedText)) {
+          console.log('PDF.js extraction successful, returning text');
+          return extractedText;
+        } else {
+          console.log('PDF.js extraction failed or text not readable, trying OCR...');
         }
         
       } catch (pdfjsError) {
-        console.warn('pdfjs-dist failed, trying alternative approach:', pdfjsError);
+        console.warn('pdfjs-dist failed:', pdfjsError);
       }
       
-      // Method 2: Advanced binary Hebrew text extraction
-      console.log('Attempting advanced Hebrew text extraction...');
-      const uint8Array = new Uint8Array(arrayBuffer);
+      // Method 2: OCR approach using Tesseract.js for Hebrew
+      console.log('Attempting OCR extraction for Hebrew text...');
       
-      // Create binary string for pattern matching
-      let pdfBinary = '';
-      for (let i = 0; i < Math.min(uint8Array.length, 1000000); i++) {
-        pdfBinary += String.fromCharCode(uint8Array[i]);
-      }
-      
-      console.log('Binary string created, length:', pdfBinary.length);
-      
-      // Advanced Hebrew text extraction with multiple patterns
-      const allExtractedTexts: string[] = [];
-      
-      // Pattern 1: Extract text between PDF text markers
-      const textMarkerPattern = /BT\s+([\s\S]*?)\s+ET/g;
-      let match;
-      while ((match = textMarkerPattern.exec(pdfBinary)) !== null) {
-        const cleaned = this.cleanAndReconstructHebrewText(match[1]);
-        if (cleaned.length > 3) {
-          allExtractedTexts.push(cleaned);
+      try {
+        // First, convert PDF pages to images using PDF.js
+        if (!pdfjsLib) {
+          pdfjsLib = await import('pdfjs-dist');
+          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
         }
-      }
-      
-      // Pattern 2: Extract text from parentheses (common in PDF text encoding)
-      const parenthesesPattern = /\(([^)]+)\)/g;
-      while ((match = parenthesesPattern.exec(pdfBinary)) !== null) {
-        const cleaned = this.cleanAndReconstructHebrewText(match[1]);
-        if (cleaned.length > 2) {
-          allExtractedTexts.push(cleaned);
-        }
-      }
-      
-      // Pattern 3: Extract Hebrew character sequences
-      const hebrewPattern = /[\u0590-\u05FF\u0020-\u007E\s]{5,}/g;
-      while ((match = hebrewPattern.exec(pdfBinary)) !== null) {
-        const cleaned = this.cleanAndReconstructHebrewText(match[0]);
-        if (cleaned.length > 3) {
-          allExtractedTexts.push(cleaned);
-        }
-      }
-      
-      // Pattern 4: Try different encoding approaches
-      const encodingMethods = [
-        { name: 'UTF-8', decoder: new TextDecoder('utf-8', { fatal: false }) },
-        { name: 'Windows-1255', decoder: new TextDecoder('windows-1255', { fatal: false }) },
-        { name: 'ISO-8859-8', decoder: new TextDecoder('iso-8859-8', { fatal: false }) }
-      ];
-      
-      for (const method of encodingMethods) {
-        try {
-          console.log(`Trying ${method.name} encoding reconstruction...`);
-          const decoded = method.decoder.decode(uint8Array);
-          const textBlocks = decoded.match(/[\u0590-\u05FF\u0020-\u007E\s]{5,}/g) || [];
-          
-          for (const block of textBlocks.slice(0, 100)) {
-            const cleaned = this.cleanAndReconstructHebrewText(block);
-            if (cleaned.length > 3 && this.containsHebrewContent(cleaned)) {
-              allExtractedTexts.push(cleaned);
+        
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
+        
+        const ocrResults: string[] = [];
+        const maxPages = Math.min(pdf.numPages, 3); // Process first 3 pages with OCR
+        
+        for (let i = 1; i <= maxPages; i++) {
+          try {
+            console.log(`Processing page ${i} with OCR...`);
+            const page = await pdf.getPage(i);
+            
+            // Get page as image
+            const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better OCR
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+            
+            const renderContext = {
+              canvasContext: context,
+              viewport: viewport
+            };
+            
+            await page.render(renderContext).promise;
+            
+            // Convert canvas to image data for Tesseract
+            const imageData = canvas.toDataURL('image/png');
+            
+            // Use Tesseract.js with Hebrew language
+            const worker = await createWorker('heb+eng'); // Hebrew + English
+            console.log(`Running OCR on page ${i}...`);
+            
+            const { data: { text } } = await worker.recognize(imageData);
+            await worker.terminate();
+            
+            console.log(`OCR page ${i} result length:`, text.length);
+            console.log(`OCR page ${i} sample:`, text.substring(0, 200));
+            
+            if (text && text.trim().length > 20) {
+              const cleanedOcrText = this.cleanHebrewText(text);
+              if (cleanedOcrText.length > 10) {
+                ocrResults.push(cleanedOcrText);
+              }
             }
+            
+          } catch (ocrPageError) {
+            console.warn(`OCR failed for page ${i}:`, ocrPageError);
           }
-        } catch (error) {
-          console.warn(`${method.name} encoding failed:`, error);
         }
+        
+        const ocrText = ocrResults.join('\n\n').trim();
+        console.log(`OCR total extracted text: ${ocrText.length} characters`);
+        
+        if (ocrText && ocrText.length > 50) {
+          console.log('OCR extraction successful');
+          return ocrText;
+        }
+        
+      } catch (ocrError) {
+        console.warn('OCR extraction failed:', ocrError);
       }
       
-      // Combine and clean all extracted text
-      let combinedText = allExtractedTexts
-        .filter((text, index, array) => array.indexOf(text) === index) // Remove duplicates
-        .map(text => this.finalHebrewTextCleanup(text))
-        .filter(text => text.length > 2)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+      // Method 3: Final fallback - enhanced binary extraction
+      console.log('Attempting enhanced binary text extraction as final fallback...');
+      const binaryResult = await this.binaryTextExtraction(arrayBuffer);
       
-      console.log(`Advanced extraction yielded ${combinedText.length} characters`);
-      console.log('- Clean text sample (first 500 chars):', combinedText.substring(0, 500));
-      console.log('- Clean text sample (last 500 chars):', combinedText.substring(Math.max(0, combinedText.length - 500)));
-      console.log('- Hebrew content detected:', this.containsHebrewContent(combinedText));
-      console.log('- Contains medical keywords:', this.containsMedicalKeywords(combinedText));
-      
-      if (combinedText && combinedText.length > 30) {
-        return combinedText;
+      if (binaryResult && binaryResult.length > 30) {
+        return binaryResult;
       }
       
-      // If all else fails, provide a helpful error message
-      throw new Error('לא ניתן לחלץ טקסט קריא מהקובץ. אנא וודא שהקובץ אינו מוגן בסיסמה ומכיל טקסט (לא רק תמונות).');
+      // If all methods fail
+      throw new Error('לא ניתן לחלץ טקסט קריא מהקובץ. ייתכן שהקובץ מוגן בסיסמה, מכיל רק תמונות, או שהטקסט מקודד בפורמט לא נתמך.');
       
     } catch (error) {
       console.error('PDF extraction error:', error);
@@ -165,66 +173,82 @@ export class PdfService {
     }
   }
   
-  // Advanced Hebrew text cleaning and reconstruction methods
-  private static cleanAndReconstructHebrewText(text: string): string {
-    let cleaned = text
-      .replace(/BT|ET|\(|\)|\[|\]/g, '') // Remove PDF markers
-      .replace(/\\[0-9]{3}/g, '') // Remove octal escape sequences
-      .replace(/[<>]/g, '') // Remove angle brackets
-      .replace(/\/[A-Za-z]+/g, '') // Remove PDF commands like /Tj, /TJ
-      .replace(/[\x00-\x08\x0B-\x1F\x7F]/g, ' ') // Remove control characters except \t and \n
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .trim();
+  private static async binaryTextExtraction(arrayBuffer: ArrayBuffer): Promise<string> {
+    const uint8Array = new Uint8Array(arrayBuffer);
+    const textResults: string[] = [];
     
-    // Hebrew character normalization and fixing common encoding issues
-    cleaned = cleaned
-      .replace(/[״״]/g, '"') // Normalize Hebrew quotation marks
-      .replace(/[׳']/g, "'") // Normalize Hebrew apostrophes
-      .replace(/[\u05F0-\u05F4]/g, '') // Remove Hebrew ligatures that may cause issues
-      .replace(/[\u0591-\u05C7]/g, '') // Remove Hebrew cantillation marks and diacritics
-      .replace(/\u05BE/g, '-') // Replace Hebrew maqaf with hyphen
-      .replace(/\u05C0/g, '|') // Replace Hebrew paseq
-      .replace(/\u05C3/g, ':') // Replace Hebrew sof pasuq
-      
-      // Fix common character substitutions in corrupted Hebrew PDFs
-      .replace(/×/g, 'א') // Sometimes × becomes א
-      .replace(/÷/g, 'ב') // Sometimes ÷ becomes ב
-      .replace(/[^\u0590-\u05FF\u0020-\u007E\s\d]/g, ' ') // Keep only Hebrew, Latin, numbers, and basic punctuation
+    // Try different encoding methods
+    const encodings = ['utf-8', 'windows-1255', 'iso-8859-8'];
+    
+    for (const encoding of encodings) {
+      try {
+        const decoder = new TextDecoder(encoding, { fatal: false });
+        const decodedText = decoder.decode(uint8Array);
+        
+        // Extract text using regex patterns
+        const patterns = [
+          /\(([\u0590-\u05FF\s\u0020-\u007E]{3,}?)\)/g, // Text in parentheses
+          /[\u0590-\u05FF][\u0590-\u05FF\s\u0020-\u007E]{5,}/g, // Hebrew sequences
+        ];
+        
+        for (const pattern of patterns) {
+          const matches = decodedText.match(pattern) || [];
+          for (const match of matches.slice(0, 100)) { // Limit matches
+            const cleaned = this.cleanHebrewText(match.replace(/[()]/g, ''));
+            if (cleaned.length > 3 && this.containsHebrewContent(cleaned)) {
+              textResults.push(cleaned);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Binary extraction with ${encoding} failed:`, err);
+      }
+    }
+    
+    return textResults
+      .filter((text, index, array) => array.indexOf(text) === index) // Remove duplicates
+      .join(' ')
       .replace(/\s+/g, ' ')
       .trim();
-    
-    return cleaned;
   }
   
-  private static finalHebrewTextCleanup(text: string): string {
+  private static calculateTextReadability(text: string): number {
+    if (!text || text.length === 0) return 0;
+    
+    const hebrewChars = (text.match(/[\u0590-\u05FF]/g) || []).length;
+    const englishChars = (text.match(/[A-Za-z]/g) || []).length;
+    const digits = (text.match(/[0-9]/g) || []).length;
+    const spaces = (text.match(/\s/g) || []).length;
+    const punctuation = (text.match(/[.,;:!?\-()]/g) || []).length;
+    
+    const readableChars = hebrewChars + englishChars + digits + spaces + punctuation;
+    const totalChars = text.length;
+    
+    return totalChars > 0 ? readableChars / totalChars : 0;
+  }
+  
+  private static cleanHebrewText(text: string): string {
     return text
+      .replace(/[\u0591-\u05C7]/g, '') // Remove Hebrew diacritics
+      .replace(/[\x00-\x08\x0B-\x1F\x7F-\x9F]/g, ' ') // Remove control characters
       .replace(/[^\u0590-\u05FF\u0020-\u007E\s\d\-.,;:()\[\]]/g, ' ') // Keep only valid characters
       .replace(/\s+/g, ' ') // Normalize whitespace
-      .replace(/\s*([.,;:!?])\s*/g, '$1 ') // Fix punctuation spacing
-      .replace(/\s+$/, '') // Remove trailing spaces
       .trim();
   }
   
   private static containsHebrewContent(text: string): boolean {
     const hebrewChars = text.match(/[\u0590-\u05FF]/g) || [];
-    return hebrewChars.length > 10; // Need at least 10 Hebrew characters
+    return hebrewChars.length >= 5; // Need at least 5 Hebrew characters
   }
   
   private static containsMedicalKeywords(text: string): boolean {
     const medicalKeywords = [
       'ביטוח', 'לאומי', 'ועדה', 'רפואי', 'נכות', 'מבוטח', 'זהות', 
-      'תאריך', 'סניף', 'החלטה', 'אבחנה', 'אחוז', 'נכות', 'פגיעה',
+      'תאריך', 'סניף', 'החלטה', 'אבחנה', 'אחוז', 'פגיעה',
       'טופס', 'מידת', 'שקלול', 'פטור', 'ממס', 'ליקוי', 'סעיף'
     ];
     
-    let found = 0;
-    for (const keyword of medicalKeywords) {
-      if (text.includes(keyword)) {
-        found++;
-      }
-    }
-    
-    return found > 0;
+    return medicalKeywords.some(keyword => text.includes(keyword));
   }
 
   static validateExtractedText(text: string, fileName: string): void {
@@ -232,10 +256,8 @@ export class PdfService {
       throw new Error(`הקובץ ${fileName} לא מכיל מספיק טקסט קריא`);
     }
     
-    // Check for Hebrew content
-    const hebrewRegex = /[\u0590-\u05FF]/;
-    if (!hebrewRegex.test(text)) {
-      console.warn(`No Hebrew text detected in ${fileName}`);
+    if (!this.containsHebrewContent(text)) {
+      console.warn(`No substantial Hebrew text detected in ${fileName}`);
     }
   }
 }
