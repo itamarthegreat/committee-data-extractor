@@ -1,6 +1,7 @@
 import { ProcessedDocument } from '@/types/document';
 import { PdfService } from './pdfService';
 import { OpenAIService } from './openaiService';
+import { OcrService } from './ocrService';
 
 export class DocumentProcessor {
   private openaiService: OpenAIService;
@@ -15,36 +16,50 @@ export class DocumentProcessor {
       
       let extractedText = '';
       
-      // Use Lovable's advanced document parser for complex PDFs
+      // Try multiple extraction methods in order of sophistication
       try {
-        console.log('Using Lovable advanced document parser...');
+        // Method 1: Try advanced OCR with Hugging Face
+        console.log('Attempting OCR extraction with Hugging Face...');
+        extractedText = await OcrService.extractTextFromPdfWithOcr(file);
         
-        // Create temporary file path for parser
-        const tempPath = `temp-pdf-${Date.now()}-${file.name}`;
+        if (extractedText && extractedText.length > 50) {
+          console.log(`OCR successfully extracted ${extractedText.length} characters`);
+        } else {
+          throw new Error('OCR did not extract sufficient text');
+        }
         
-        // Create FormData to prepare for parsing
-        const formData = new FormData();
-        formData.append('file', file);
+      } catch (ocrError) {
+        console.warn('OCR extraction failed, trying binary extraction:', ocrError);
         
-        // Since we need to use the document parser, let's inform the user
-        // that they should try uploading the file again using the document parser
-        console.log('Complex PDF detected - requires advanced parsing');
-        
-        // For now, let's try a different approach - ask user to try again
-        throw new Error(`
-הקובץ "${file.name}" מכיל טקסט מקודד או סרוק שדורש עיבוד מתקדם.
+        // Method 2: Fallback to advanced binary extraction
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          extractedText = await this.advancedBinaryExtraction(arrayBuffer);
+          
+          if (extractedText && extractedText.length > 20) {
+            console.log(`Binary extraction extracted ${extractedText.length} characters`);
+          } else {
+            throw new Error('Binary extraction insufficient');
+          }
+          
+        } catch (binaryError) {
+          console.error('All extraction methods failed');
+          throw new Error(`
+לא ניתן לחלץ טקסט קריא מהקובץ "${file.name}".
 
-אנא נסה את הפתרונות הבאים:
-1. העלה את הקובץ שוב - לפעמים הניסיון השני עובד טוב יותר
-2. ודא שהקובץ אינו מוגן בסיסמה
-3. אם מדובר בקובץ סרוק, נסה לשמור אותו כ-PDF עם OCR
+ניסינו:
+✗ OCR מתקדם עם Hugging Face
+✗ חילוץ בינארי מתקדם
 
-לחילופין, נסה קובץ PDF אחר לבדיקת המערכת.
-        `);
-        
-      } catch (parserError) {
-        console.error('Advanced parsing failed:', parserError);
-        throw parserError;
+הקובץ עשוי להיות:
+• מוגן בסיסמה
+• פגום או לא תקין
+• מכיל רק תמונות ללא טקסט
+• מקודד בפורמט לא נתמך
+
+אנא נסה קובץ PDF אחר או שמור את הקובץ מחדש.
+          `);
+        }
       }
       
       console.log(`Successfully extracted ${extractedText.length} characters from ${file.name}`);
