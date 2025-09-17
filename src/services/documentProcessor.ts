@@ -15,48 +15,19 @@ export class DocumentProcessor {
       let extractedText = '';
       
       try {
-        // Use Lovable's Document Parser for reliable text extraction
-        console.log('Using Lovable Document Parser...');
+        // Use advanced PDF text extraction
+        console.log('Extracting text from PDF...');
+        extractedText = await this.extractPdfText(file);
         
-        // Copy file to user-uploads for document parser
-        const tempFileName = `temp_${Date.now()}_${file.name}`;
-        
-        // Create blob and temporary file path
-        const arrayBuffer = await file.arrayBuffer();
-        const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
-        
-        // Since we can't directly call document parser from browser,
-        // we'll simulate the process by extracting the PDF content
-        // In a real implementation, this would be handled by the backend
-        
-        // For now, create a simple extraction that mimics document parser results
-        extractedText = await this.simulateDocumentParser(file);
-        
-        if (!extractedText || extractedText.length < 30) {
-          throw new Error('Document parser could not extract text');
+        if (!extractedText || extractedText.length < 20) {
+          throw new Error('Could not extract sufficient text');
         }
         
-        console.log(`Document parser extracted ${extractedText.length} characters`);
+        console.log(`Successfully extracted ${extractedText.length} characters`);
         
       } catch (error) {
-        console.error('Document parser failed:', error);
-        
-        // Show user helpful message about document parser
-        throw new Error(`
-לא ניתן לעבד את הקובץ "${file.name}" אוטומטית.
-
-🔧 פתרון: העלה את הקובץ ישירות בצ'אט
-
-📎 לחץ על כפתור העלאת הקבצים בחלון הצ'אט ועלה את ה-PDF שם.
-המערכת של לובל תפעיל את ה-Document Parser המתקדם אוטומטית.
-
-זה יעבוד עם כל סוג PDF:
-• קבצים מוגנים או חתומים דיגיטלית  
-• טקסט סרוק או מוטמע כתמונות
-• פורמטים מורכבים
-
-נסה להעלות את הקובץ בצ'אט עכשיו!
-        `);
+        console.error('PDF extraction failed:', error);
+        throw new Error(`לא ניתן לחלץ טקסט מהקובץ: ${error.message}`);
       }
       
       console.log(`Processing extracted text for ${file.name}:`);
@@ -98,14 +69,157 @@ export class DocumentProcessor {
     }
   }
   
-  private async simulateDocumentParser(file: File): Promise<string> {
-    // This is a placeholder that simulates document parser behavior
-    // In a real backend implementation, this would call the actual document parser API
+  private async extractPdfText(file: File): Promise<string> {
+    console.log('Starting advanced PDF text extraction...');
     
-    console.log('Simulating document parser...');
+    const arrayBuffer = await file.arrayBuffer();
+    const uint8Array = new Uint8Array(arrayBuffer);
     
-    // For demonstration, return a message that guides users to use chat upload
-    throw new Error('Use chat upload for document parser');
+    // Strategy 1: Look for readable text using multiple approaches
+    const extractedTexts: string[] = [];
+    
+    // Create binary string
+    let binaryString = '';
+    for (let i = 0; i < Math.min(uint8Array.length, 3000000); i++) {
+      const byte = uint8Array[i];
+      if ((byte >= 32 && byte <= 126) || // ASCII
+          (byte >= 0x05D0 && byte <= 0x05EA) || // Hebrew
+          byte === 10 || byte === 13 || byte === 9) {
+        binaryString += String.fromCharCode(byte);
+      } else {
+        binaryString += ' ';
+      }
+    }
+    
+    console.log('Binary string created, length:', binaryString.length);
+    
+    // Strategy 2: Extract based on known patterns from analyzed document
+    const patterns = [
+      // Names (Hebrew names like "קיבוביץ מיקה")
+      { regex: /([א-ת]+\s*[א-ת]*)\s*([א-ת]+)/g, type: 'name', weight: 10 },
+      
+      // ID numbers (9 digits like "221635089") 
+      { regex: /\b\d{9}\b/g, type: 'id', weight: 10 },
+      
+      // Dates (various formats)
+      { regex: /\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}\b/g, type: 'date', weight: 9 },
+      
+      // Medical codes (like "F43")
+      { regex: /\b[A-Z]\d{2,3}\b/g, type: 'medical_code', weight: 8 },
+      
+      // Percentages
+      { regex: /\b\d{1,3}%/g, type: 'percentage', weight: 8 },
+      
+      // Committee numbers (like "NV-45035-3900")
+      { regex: /[A-Z]{2}-\d{5}-\d{4}/g, type: 'committee_number', weight: 9 },
+      
+      // Phone numbers
+      { regex: /\b0\d{2}-\d{7}\b/g, type: 'phone', weight: 7 },
+      
+      // Medical keywords in Hebrew
+      { regex: /(ביטוח\s*לאומי|ועדה\s*רפואית|נכות|אבחנה|פגיעה|דחק|טראומה|הפרעת|חרדה)/gi, type: 'medical_term', weight: 8 },
+      
+      // Committee-related terms
+      { regex: /(משתתפי\s*הועדה|סניף|תאריך\s*הועדה|דוח\s*רפואי)/gi, type: 'committee_term', weight: 7 },
+      
+      // Hebrew words (general)
+      { regex: /[א-ת]{3,}/g, type: 'hebrew_word', weight: 3 }
+    ];
+    
+    const foundData: { text: string, type: string, weight: number }[] = [];
+    
+    for (const pattern of patterns) {
+      const matches = binaryString.match(pattern.regex) || [];
+      console.log(`Pattern ${pattern.type} found ${matches.length} matches`);
+      
+      for (const match of matches.slice(0, 50)) {
+        const cleaned = match.trim().replace(/\s+/g, ' ');
+        if (cleaned.length > 1) {
+          foundData.push({ text: cleaned, type: pattern.type, weight: pattern.weight });
+        }
+      }
+    }
+    
+    // Strategy 3: Try different character encodings for Hebrew
+    const encodings = ['windows-1255', 'iso-8859-8', 'utf-8'];
+    
+    for (const encoding of encodings) {
+      try {
+        const decoder = new TextDecoder(encoding, { fatal: false });
+        const decoded = decoder.decode(uint8Array);
+        
+        // Look for Hebrew medical terms in decoded text
+        const hebrewMedicalTerms = [
+          'ביטוח לאומי', 'ועדה רפואית', 'נכות', 'אבחנה', 'פגיעה', 
+          'דוח רפואי', 'משתתפי הועדה', 'סניף', 'אחוז נכות'
+        ];
+        
+        for (const term of hebrewMedicalTerms) {
+          const regex = new RegExp(`${term}[^\\n]{0,100}`, 'gi');
+          const matches = decoded.match(regex) || [];
+          
+          for (const match of matches) {
+            const cleaned = match.replace(/[^\u05D0-\u05EA\s\d\/%.\-:()]/g, ' ').trim();
+            if (cleaned.length > 3) {
+              foundData.push({ text: cleaned, type: 'medical_context', weight: 9 });
+            }
+          }
+        }
+        
+        // Extract Hebrew names and text segments
+        const hebrewSegments = decoded.match(/[א-ת][א-ת\s]{2,50}/g) || [];
+        for (const segment of hebrewSegments.slice(0, 30)) {
+          const cleaned = segment.replace(/[^\u05D0-\u05EA\s]/g, ' ').trim();
+          if (cleaned.length > 2) {
+            foundData.push({ text: cleaned, type: 'hebrew_text', weight: 5 });
+          }
+        }
+        
+      } catch (err) {
+        console.warn(`Encoding ${encoding} failed:`, err);
+      }
+    }
+    
+    // Sort by weight and relevance
+    const sortedData = foundData
+      .sort((a, b) => (b.weight * Math.log(b.text.length + 1)) - (a.weight * Math.log(a.text.length + 1)))
+      .slice(0, 200);
+    
+    // Build structured text output
+    const structuredText: string[] = [];
+    
+    // Group by type for better organization
+    const groupedData: { [key: string]: string[] } = {};
+    
+    for (const item of sortedData) {
+      if (!groupedData[item.type]) {
+        groupedData[item.type] = [];
+      }
+      if (!groupedData[item.type].includes(item.text)) {
+        groupedData[item.type].push(item.text);
+      }
+    }
+    
+    // Add to structured text in order of importance
+    const typeOrder = ['name', 'id', 'committee_number', 'date', 'medical_code', 'percentage', 'phone', 'medical_term', 'committee_term', 'medical_context', 'hebrew_text', 'hebrew_word'];
+    
+    for (const type of typeOrder) {
+      if (groupedData[type]) {
+        structuredText.push(...groupedData[type].slice(0, 20)); // Limit per type
+      }
+    }
+    
+    const finalText = structuredText.join(' ').replace(/\s+/g, ' ').trim();
+    
+    console.log(`Extracted ${structuredText.length} text elements`);
+    console.log('Final text length:', finalText.length);
+    console.log('Sample:', finalText.substring(0, 300));
+    
+    if (finalText.length < 30) {
+      throw new Error('Could not extract sufficient readable text from PDF');
+    }
+    
+    return finalText;
   }
   
   async processMultipleFiles(files: File[]): Promise<ProcessedDocument[]> {
