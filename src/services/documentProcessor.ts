@@ -29,9 +29,9 @@ export class DocumentProcessor {
     try {
       console.log(`Starting to process file: ${file.name}`);
       
+      // Try processing file directly with OpenAI vision FIRST
+      console.log('Sending PDF file directly to OpenAI Vision API...');
       try {
-        // Try processing file directly with OpenAI vision
-        console.log('Sending file directly to OpenAI...');
         const extractedData = await this.openaiService.processDocumentFile(file, file.name);
         
         return {
@@ -41,14 +41,15 @@ export class DocumentProcessor {
         } as ProcessedDocument;
         
       } catch (directError) {
-        console.warn('Direct file processing failed:', directError);
+        console.error('Direct file processing failed:', directError);
+        console.log('Falling back to text extraction methods...');
         
         // Fallback to text extraction methods
         let extractedText = '';
         
         try {
           // First try using the document parser tool
-          console.log('Falling back to text extraction...');
+          console.log('Using document parser for text extraction...');
           extractedText = await this.parseDocumentWithTool(file);
           
           if (extractedText && extractedText.length > 50) {
@@ -169,39 +170,6 @@ export class DocumentProcessor {
             }
           }
           return result;
-        },
-        // ISO-8859-8 Hebrew
-        () => {
-          let result = '';
-          for (let i = 0; i < uint8Array.length; i++) {
-            const byte = uint8Array[i];
-            if (byte >= 224 && byte <= 250) {
-              result += String.fromCharCode(0x05D0 + (byte - 224));
-            } else if (byte >= 160 && byte <= 175) {
-              result += String.fromCharCode(0x05D0 + (byte - 160));
-            } else if (byte >= 32 && byte <= 126) {
-              result += String.fromCharCode(byte);
-            } else {
-              result += ' ';
-            }
-          }
-          return result;
-        },
-        // Try reverse byte order for RTL issues
-        () => {
-          let result = '';
-          for (let i = 0; i < uint8Array.length; i++) {
-            const byte = uint8Array[i];
-            if (byte >= 192 && byte <= 218) {
-              // Another Hebrew range
-              result += String.fromCharCode(0x05D0 + (218 - byte));
-            } else if (byte >= 32 && byte <= 126) {
-              result += String.fromCharCode(byte);
-            } else {
-              result += ' ';
-            }
-          }
-          return result;
         }
       ];
       
@@ -255,25 +223,6 @@ export class DocumentProcessor {
         }
       }
       
-      // Strategy 2: Try to fix garbled Hebrew text by character replacement
-      const garbledText = "אטה שון אשו טבד תואז צמנ פשףח מאק סלס תשק ןבא דצר פזף לכר גרה שסח ףצש נער ףתא תבר יבי זשצ וגפ שית זנכ ןתש ייס צךרמ סםצ פלח";
-      
-      // Try to fix common Hebrew encoding issues
-      const hebrewFixes = [
-        // Reverse the text (RTL issue)
-        garbledText.split('').reverse().join(''),
-        // Try character mapping fixes
-        garbledText
-          .replace(/ט/g, 'מ')
-          .replace(/ה/g, 'ה')
-          .replace(/שון/g, 'שם')
-          .replace(/אשו/g, 'אש'),
-        // Try removing extra characters
-        garbledText.replace(/[ךםןףץ]/g, '')
-      ];
-      
-      extractedTexts.push(...hebrewFixes);
-      
       // Clean and deduplicate
       const uniqueTexts = [...new Set(extractedTexts)]
         .filter(text => text && text.trim().length > 1)
@@ -304,44 +253,6 @@ export class DocumentProcessor {
       console.error('Enhanced Hebrew document parser failed:', error);
       throw new Error('Enhanced document parsing failed');
     }
-  }
-  
-  private async extractTextFromArrayBuffer(arrayBuffer: ArrayBuffer, fileName: string): Promise<string> {
-    // For now, fall back to the enhanced PDF text extraction
-    // In the future, this could be replaced with a proper document parser integration
-    const uint8Array = new Uint8Array(arrayBuffer);
-    
-    // Try to find readable Hebrew and English text
-    const decoder = new TextDecoder('utf-8', { fatal: false });
-    let content = decoder.decode(uint8Array);
-    
-    // Look for actual content patterns in Hebrew PDFs
-    const patterns = [
-      // Hebrew text patterns
-      /[\u05D0-\u05EA]{2,}(?:\s+[\u05D0-\u05EA]{2,})*/g,
-      // ID numbers
-      /\b\d{9}\b/g,
-      // Dates
-      /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/g,
-      // Percentages
-      /\d{1,3}%/g,
-      // Medical/committee terms in Hebrew
-      /(ביטוח\s*לאומי|ועדה\s*רפואית|נכות|אבחנה|פגיעה|דוח\s*רפואי|משתתפי\s*הועדה)/gi
-    ];
-    
-    const extractedParts: string[] = [];
-    
-    for (const pattern of patterns) {
-      const matches = content.match(pattern) || [];
-      extractedParts.push(...matches.slice(0, 20)); // Limit per pattern
-    }
-    
-    if (extractedParts.length > 0) {
-      return extractedParts.join(' ').trim();
-    }
-    
-    // If no patterns found, try a different approach
-    return this.extractPdfText({ arrayBuffer: () => Promise.resolve(arrayBuffer) } as File);
   }
   
   private async extractPdfText(file: File): Promise<string> {
@@ -412,46 +323,6 @@ export class DocumentProcessor {
         if (cleaned.length > 1) {
           foundData.push({ text: cleaned, type: pattern.type, weight: pattern.weight });
         }
-      }
-    }
-    
-    // Strategy 3: Try different character encodings for Hebrew
-    const encodings = ['windows-1255', 'iso-8859-8', 'utf-8'];
-    
-    for (const encoding of encodings) {
-      try {
-        const decoder = new TextDecoder(encoding, { fatal: false });
-        const decoded = decoder.decode(uint8Array);
-        
-        // Look for Hebrew medical terms in decoded text
-        const hebrewMedicalTerms = [
-          'ביטוח לאומי', 'ועדה רפואית', 'נכות', 'אבחנה', 'פגיעה', 
-          'דוח רפואי', 'משתתפי הועדה', 'סניף', 'אחוז נכות'
-        ];
-        
-        for (const term of hebrewMedicalTerms) {
-          const regex = new RegExp(`${term}[^\\n]{0,100}`, 'gi');
-          const matches = decoded.match(regex) || [];
-          
-          for (const match of matches) {
-            const cleaned = match.replace(/[^\u05D0-\u05EA\s\d\/%.\-:()]/g, ' ').trim();
-            if (cleaned.length > 3) {
-              foundData.push({ text: cleaned, type: 'medical_context', weight: 9 });
-            }
-          }
-        }
-        
-        // Extract Hebrew names and text segments
-        const hebrewSegments = decoded.match(/[א-ת][א-ת\s]{2,50}/g) || [];
-        for (const segment of hebrewSegments.slice(0, 30)) {
-          const cleaned = segment.replace(/[^\u05D0-\u05EA\s]/g, ' ').trim();
-          if (cleaned.length > 2) {
-            foundData.push({ text: cleaned, type: 'hebrew_text', weight: 5 });
-          }
-        }
-        
-      } catch (err) {
-        console.warn(`Encoding ${encoding} failed:`, err);
       }
     }
     
