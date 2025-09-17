@@ -85,7 +85,13 @@ export class DocumentProcessor {
     
     const uint8Array = new Uint8Array(arrayBuffer);
     
-    // Strategy 1: Multiple binary string approaches
+    // Check if this is a digitally signed or encrypted PDF
+    const binaryCheck = new TextDecoder('utf-8', { fatal: false }).decode(uint8Array.slice(0, 10000));
+    if (binaryCheck.includes('/Sig') || binaryCheck.includes('308204') || binaryCheck.includes('864886f70d')) {
+      console.log('Detected digitally signed or complex PDF - trying advanced extraction');
+    }
+    
+    // Strategy 1: Multiple binary string approaches with enhanced filtering
     const extractedTexts: string[] = [];
     
     // Approach 1: Direct character conversion with Hebrew support
@@ -262,11 +268,68 @@ export class DocumentProcessor {
     console.log('Final result length:', finalText.length);
     console.log('Sample result:', finalText.substring(0, 500));
     
+    // Special handling for digitally signed PDFs
+    if (finalText.length < 100 && (binaryCheck.includes('/Sig') || binaryCheck.includes('308204'))) {
+      console.log('PDF appears to be digitally signed with embedded text as images');
+      
+      // Try to extract any readable content from between binary blocks
+      const readableSegments = this.extractReadableFromBinary(binaryString);
+      if (readableSegments.length > 50) {
+        console.log('Found readable segments in binary data');
+        return readableSegments;
+      }
+      
+      throw new Error(`
+קובץ PDF זה מוגן בחתימה דיגיטלית והטקסט מוטמע כתמונות.
+
+🔧 פתרונות מומלצים:
+
+1. **העלה את הקובץ ישירות בצ'אט** 📎
+   • לחץ על כפתור העלאת הקבצים בצ'אט
+   • המערכת תפעיל Document Parser מתקדם + OCR
+
+2. **המר את הקובץ:**
+   • שמור את ה-PDF מחדש ללא חתימה דיגיטלית
+   • השתמש בתוכנה עם OCR לחילוץ טקסט
+   • נסה להדפיס ל-PDF חדש
+
+3. **נסה קובץ אחר:**
+   • PDF פשוט ללא הגנות
+   • קובץ Word או Excel
+
+האפשרות הטובה ביותר היא העלאה ישירה בצ'אט.
+      `);
+    }
+    
     if (finalText.length < 30) {
       throw new Error('Could not extract sufficient readable text from PDF');
     }
     
     return finalText;
+  }
+  
+  private extractReadableFromBinary(binaryString: string): string {
+    // Try to find readable text segments between binary data
+    const readableSegments: string[] = [];
+    
+    // Look for Hebrew text patterns that might be hidden in the binary
+    const patterns = [
+      /(?:[א-ת]\s*){3,}/g,
+      /[א-ת][א-ת\s]{5,}[א-ת]/g,
+      /(?:ביטוח|לאומי|ועדה|רפואי|נכות|מבוטח|אבחנה|תאריך)/g
+    ];
+    
+    for (const pattern of patterns) {
+      const matches = binaryString.match(pattern) || [];
+      for (const match of matches) {
+        const cleaned = match.replace(/[^\u05D0-\u05EA\s]/g, ' ').trim();
+        if (cleaned.length > 3) {
+          readableSegments.push(cleaned);
+        }
+      }
+    }
+    
+    return readableSegments.join(' ').replace(/\s+/g, ' ').trim();
   }
 
   async processMultipleFiles(files: File[]): Promise<ProcessedDocument[]> {
