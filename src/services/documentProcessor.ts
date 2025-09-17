@@ -29,42 +29,57 @@ export class DocumentProcessor {
     try {
       console.log(`Starting to process file: ${file.name}`);
       
-      let extractedText = '';
-      
       try {
-        // First try using the document parser tool
-        console.log('Using document parser for text extraction...');
-        extractedText = await this.parseDocumentWithTool(file);
+        // Try processing file directly with OpenAI vision
+        console.log('Sending file directly to OpenAI...');
+        const extractedData = await this.openaiService.processDocumentFile(file, file.name);
         
-        if (extractedText && extractedText.length > 50) {
-          console.log(`Document parser successfully extracted ${extractedText.length} characters`);
-        } else if (this.googleApiKey) {
-          // Fallback to Google OCR if document parser doesn't work well
-          console.log('Document parser insufficient, trying Google OCR...');
-          extractedText = await GoogleOcrService.extractTextFromPdf(file, this.googleApiKey);
+        return {
+          fileName: file.name,
+          processingStatus: 'completed',
+          ...extractedData
+        } as ProcessedDocument;
+        
+      } catch (directError) {
+        console.warn('Direct file processing failed:', directError);
+        
+        // Fallback to text extraction methods
+        let extractedText = '';
+        
+        try {
+          // First try using the document parser tool
+          console.log('Falling back to text extraction...');
+          extractedText = await this.parseDocumentWithTool(file);
           
-          if (extractedText && extractedText.length > 30) {
-            console.log(`Google OCR successfully extracted ${extractedText.length} characters`);
+          if (extractedText && extractedText.length > 50) {
+            console.log(`Document parser successfully extracted ${extractedText.length} characters`);
+          } else if (this.googleApiKey) {
+            // Fallback to Google OCR if document parser doesn't work well
+            console.log('Document parser insufficient, trying Google OCR...');
+            extractedText = await GoogleOcrService.extractTextFromPdf(file, this.googleApiKey);
+            
+            if (extractedText && extractedText.length > 30) {
+              console.log(`Google OCR successfully extracted ${extractedText.length} characters`);
+            } else {
+              throw new Error('Both document parser and Google OCR failed');
+            }
           } else {
-            throw new Error('Both document parser and Google OCR failed');
+            // Last resort - basic extraction
+            console.log('No Google API key, trying basic extraction...');
+            extractedText = await this.extractPdfText(file);
+            
+            if (!extractedText || extractedText.length < 20) {
+              throw new Error('Could not extract sufficient text');
+            }
           }
-        } else {
-          // Last resort - basic extraction
-          console.log('No Google API key, trying basic extraction...');
-          extractedText = await this.extractPdfText(file);
           
-          if (!extractedText || extractedText.length < 20) {
-            throw new Error('Could not extract sufficient text');
-          }
-        }
-        
-        console.log(`Successfully extracted ${extractedText.length} characters`);
-        
-      } catch (error) {
-        console.error('Text extraction failed:', error);
-        
-        if (!this.googleApiKey) {
-          throw new Error(`
+          console.log(`Successfully extracted ${extractedText.length} characters`);
+          
+        } catch (error) {
+          console.error('Text extraction failed:', error);
+          
+          if (!this.googleApiKey) {
+            throw new Error(`
 לא ניתן לחלץ טקסט מהקובץ.
 
 🔑 הוסף מפתח Google Cloud Vision API לתוצאות טובות יותר:
@@ -75,23 +90,24 @@ export class DocumentProcessor {
 4. הוסף את המפתח בהגדרות המערכת
 
 או נסה קובץ PDF פשוט יותר.
-          `);
+            `);
+          }
+          
+          throw new Error(`לא ניתן לחלץ טקסט מהקובץ: ${error.message}`);
         }
         
-        throw new Error(`לא ניתן לחלץ טקסט מהקובץ: ${error.message}`);
+        console.log(`Processing extracted text for ${file.name}:`);
+        console.log('Text sample:', extractedText.substring(0, 200));
+        
+        // Process with OpenAI
+        const extractedData = await this.openaiService.processDocumentText(extractedText, file.name);
+        
+        return {
+          fileName: file.name,
+          processingStatus: 'completed',
+          ...extractedData
+        } as ProcessedDocument;
       }
-      
-      console.log(`Processing extracted text for ${file.name}:`);
-      console.log('Text sample:', extractedText.substring(0, 200));
-      
-      // Process with OpenAI
-      const extractedData = await this.openaiService.processDocumentText(extractedText, file.name);
-      
-      return {
-        fileName: file.name,
-        processingStatus: 'completed',
-        ...extractedData
-      } as ProcessedDocument;
       
     } catch (error) {
       console.error(`Error processing file ${file.name}:`, error);

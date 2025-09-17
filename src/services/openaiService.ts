@@ -11,6 +11,57 @@ export class OpenAIService {
     });
   }
   
+  async processDocumentFile(file: File, fileName: string): Promise<Partial<ProcessedDocument>> {
+    console.log(`Processing document file directly: ${fileName}`);
+    
+    try {
+      // Convert file to base64 for OpenAI API
+      const arrayBuffer = await file.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      const mimeType = file.type || 'application/pdf';
+      
+      const prompt = this.createEnhancedExtractionPrompt("");
+      
+      const completion = await this.openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `${prompt}\n\nהקובץ המצורף הוא מסמך ועדה רפואית בעברית. אנא חלץ את המידע הנדרש מהמסמך:`
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${base64}`,
+                  detail: "high"
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 4000
+      });
+
+      const content = completion.choices[0].message.content;
+      console.log(`OpenAI direct file response for ${fileName}:`, content);
+      
+      if (!content) {
+        throw new Error('OpenAI returned empty response');
+      }
+
+      return this.parseOpenAIResponse(content);
+      
+    } catch (error) {
+      console.error('OpenAI direct file processing error:', error);
+      
+      // Fallback to text-based processing
+      return this.processDocumentText("", fileName);
+    }
+  }
+
   async processDocumentText(text: string, fileName: string): Promise<Partial<ProcessedDocument>> {
     // Clean and normalize Hebrew text first
     const cleanedText = this.cleanHebrewText(text);
