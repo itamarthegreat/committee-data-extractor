@@ -11,62 +11,12 @@ export class OpenAIService {
     });
   }
   
-  async processDocumentFile(file: File, fileName: string): Promise<Partial<ProcessedDocument>> {
-    console.log(`Processing ${fileName} with OpenAI Vision API`);
-    
-    try {
-      const completion = await this.openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: this.getSystemPrompt()
-          },
-          {
-            role: "user", 
-            content: [
-              { type: "text", text: "Analyze this PDF and return JSON." },
-              {
-                type: "image_url",
-                image_url: {
-                  url: await this.fileToBase64(file)
-                }
-              }
-            ]
-          }
-        ]
-      });
-
-      const content = completion.choices[0].message.content;
-      console.log(`OpenAI raw response for ${fileName}:`, content);
-      
-      if (!content) {
-        throw new Error('OpenAI returned empty response');
-      }
-
-      return this.parseOpenAIResponse(content);
-      
-    } catch (error) {
-      console.error('OpenAI processing error:', error);
-      throw new Error(`שגיאה בעיבוד עם OpenAI: ${error.message}`);
-    }
-  }
-
-  private async fileToBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-  
   async processDocumentText(text: string, fileName: string): Promise<Partial<ProcessedDocument>> {
     // Clean and normalize Hebrew text first
     const cleanedText = this.cleanHebrewText(text);
     
     // Limit text length for better OpenAI processing
-    const maxLength = 15000; // Reduced further for more focused processing
+    const maxLength = 15000;
     const truncatedText = cleanedText.length > maxLength ? cleanedText.substring(0, maxLength) + '...' : cleanedText;
     
     console.log(`Processing ${fileName}:`);
@@ -84,11 +34,11 @@ export class OpenAIService {
       throw new Error('הטקסט שנחלץ מהקובץ אינו קריא מספיק. ייתכן שהקובץ מוצפן, מוגן או מכיל רק תמונות שצריכות OCR.');
     }
     
-    const prompt = this.getSystemPrompt();
+    const prompt = this.createEnhancedExtractionPrompt(truncatedText);
     
     try {
       const completion = await this.openai.chat.completions.create({
-        model: "gpt-5-2025-08-07",
+        model: "gpt-4o-mini",
         messages: [{ role: "user", content: prompt }],
       });
 
@@ -107,40 +57,56 @@ export class OpenAIService {
     }
   }
   
-  private getSystemPrompt(): string {
-    return `You are a backend extraction agent for a law-firm system.
+  private createEnhancedExtractionPrompt(text: string): string {
+    return `אתה מומחה בחילוץ מידע ממסמכי ועדות רפואיות של ביטוח לאומי בעברית.
 
-Goal:
-- Receive a PDF file of a medical committee protocol (Hebrew).
-- Extract the exact values for each of the following headers (Hebrew).
-- Return one JSON object with these exact keys and values as they appear in the document.
-- Do not calculate or interpret anything. If a value is missing or unreadable, return null.
+**טקסט המסמך:**
+${text}
 
-Headers:
-"סוג ועדה",
-"שם טופס",
-"סניף הוועדה",
-"שם המבוטח",
-"ת.ז:",
-"תאריך פגיעה(רק באיבה,נכות מעבודה)",
-"משתתפי הועדה",
-"תקופה",
-"אבחנה",
-"סעיף ליקוי",
-"אחוז הנכות הנובע מהפגיעה",
-"הערות",
-"מתאריך",
-"עד תאריך",
-"מידת הנכות",
-"אחוז הנכות משוקלל",
-"שקלול לפטור ממס"
+**משימה:** חלץ את הערכים המדויקים עבור השדות הבאים. אם שדה לא נמצא, החזר null.
 
-Output:
-\`\`\`json
+**מיקום השדות במסמך (הנחיות מפורטות):**
+
+**פרטי ועדה (בראש המסמך):**
+- **סוג ועדה**: חפש "ועדת", "ועדה רפואית", "נכות", "שיקום" בכותרת
+- **שם טופס**: חפש "טופס" או מספר טופס (למשל "טופס 21", "טופס 119")
+- **סניף הועדה**: חפש "סניף", "משרד" (למשל "סניף ירושלים", "משרד רמלה")
+
+**פרטי מבוטח (בראש המסמך):**
+- **שם המבוטח**: חפש "שם:", "שם המבוטח:", או שם אחרי ת.ז
+- **ת.ז:**: חפש "ת.ז:", "תעודת זהות", "מספר זהות" - תמיד 9 ספרות
+- **תאריך פגיעה**: חפש "תאריך פגיעה:", "פגיעה בתאריך", רק בתיקי נכות מעבודה/איבה
+
+**משתתפי הועדה (בטבלה נפרדת):**
+- **משתתפי הועדה**: חפש טבלה עם "שם", "תפקיד" - כלול רופאים, מזכיר/ה, יו"ר
+
+**פרטי תקופה ואבחנה (בטבלה מרכזית):**
+- **תקופה**: חפש "תקופה:", "מתאריך", "עד תאריך"
+- **אבחנה**: חפש "אבחנה:", "קוד אבחנה", "תיאור הליקוי"
+- **סעיף ליקוי**: חפש "סעיף", מספרים כמו "2.1", "3.4"
+
+**פרטי נכות (בטבלת החלטות):**
+- **אחוז הנכות הנובע מהפגיעה**: חפש "אחוז נכות", "%", בטבלת החלטות
+- **הערות**: חפש "הערות:", "הערה:", בסוף הטבלה
+- **מתאריך**: תאריך תחילת נכות
+- **עד תאריך**: תאריך סיום נכות (אם זמני)
+
+**פרטי שקלול (בטבלה תחתונה):**
+- **מידת הנכות**: חפש "קבוע", "זמני", "מידת נכות"
+- **אחוז הנכות משוקלל**: אחוז סופי אחרי חישובים
+- **שקלול לפטור ממס**: חפש "פטור ממס", "שקלול מס"
+
+**דוגמאות למיקום:**
+- כותרת: "ועדה רפואית לנכות כללית - סניף תל אביב"
+- פרטי אישיים: "שם: יוסי כהן, ת.ז: 123456789"
+- טבלת משתתפים: "ד"ר דוד לוי - רופא מומחה"
+- טבלת החלטות: "תקופה: 01/01/2024 - 31/12/2024, אבחנה: כאב גב, אחוז: 15%"
+
+**חזור בפורמט JSON בלבד:**
 {
   "סוג ועדה": "...",
   "שם טופס": "...",
-  "סניף הוועדה": "...",
+  "סניף הועדה": "...",
   "שם המבוטח": "...",
   "ת.ז:": "...",
   "תאריך פגיעה(רק באיבה,נכות מעבודה)": "...",
@@ -156,9 +122,8 @@ Output:
   "אחוז הנכות משוקלל": "...",
   "שקלול לפטור ממס": "..."
 }
-\`\`\`
 
-Return only this JSON. No extra text.`;
+**רק JSON, ללא טקסט נוסף!**`;
   }
   
   private parseOpenAIResponse(content: string): Partial<ProcessedDocument> {

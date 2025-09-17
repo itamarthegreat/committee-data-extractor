@@ -13,8 +13,17 @@ export class DocumentProcessor {
     try {
       console.log(`Starting to process file: ${file.name}`);
       
-      // Process with OpenAI Vision API directly
-      const extractedData = await this.openaiService.processDocumentFile(file, file.name);
+      // Extract text from PDF using PdfService
+      const text = await PdfService.extractTextFromPdf(file);
+      
+      if (!text || text.trim().length === 0) {
+        throw new Error('לא הצלחתי לחלץ טקסט מהקובץ. ייתכן שהקובץ מוגן או פגום.');
+      }
+      
+      console.log(`Extracted ${text.length} characters from ${file.name}`);
+      
+      // Process with OpenAI
+      const extractedData = await this.openaiService.processDocumentText(text, file.name);
       
       return {
         fileName: file.name,
