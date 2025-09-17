@@ -1,4 +1,4 @@
-// PDF processing service with reliable browser-compatible text extraction
+// Advanced PDF processing service with enhanced Hebrew text extraction
 export class PdfService {
   
   static async extractTextFromPdf(file: File): Promise<string> {
@@ -10,8 +10,8 @@ export class PdfService {
       try {
         pdfjsLib = await import('pdfjs-dist');
         
-        // Configure worker properly - use more reliable CDN
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+        // Configure worker properly - use jsDelivr CDN
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
         
         console.log('Loading PDF with pdfjs-dist...');
         
@@ -21,8 +21,8 @@ export class PdfService {
           isEvalSupported: false,
           useSystemFonts: true,
           verbosity: 0,
-          standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/standard_fonts/`,
-          cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
+          standardFontDataUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/standard_fonts/`,
+          cMapUrl: `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
           cMapPacked: true
         });
         
@@ -40,7 +40,7 @@ export class PdfService {
             const pageText = textContent.items
               .map((item: any) => {
                 if (item.str && item.str.trim()) {
-                  return item.str.trim();
+                  return this.cleanAndReconstructHebrewText(item.str.trim());
                 }
                 return '';
               })
@@ -63,185 +63,97 @@ export class PdfService {
         console.log(`Sample:`, extractedText.substring(0, 500));
         
         if (extractedText && extractedText.length > 20) {
-          return extractedText;
+          return this.finalHebrewTextCleanup(extractedText);
         }
         
       } catch (pdfjsError) {
         console.warn('pdfjs-dist failed, trying alternative approach:', pdfjsError);
-        
-        // Try alternative PDF.js configuration  
-        try {
-          if (!pdfjsLib) {
-            pdfjsLib = await import('pdfjs-dist');
-          }
-          
-          const altLoadingTask = pdfjsLib.getDocument({
-            data: arrayBuffer,
-            disableAutoFetch: true,
-            disableStream: true,
-            disableFontFace: true,
-            useSystemFonts: false,
-            verbosity: 0
-          });
-          
-          const altPdf = await altLoadingTask.promise;
-          const altTextPages: string[] = [];
-          
-          for (let i = 1; i <= altPdf.numPages; i++) {
-            try {
-              const page = await altPdf.getPage(i);
-              const textContent = await page.getTextContent({
-                normalizeWhitespace: true,
-                disableCombineTextItems: false
-              });
-              
-              const pageText = textContent.items
-                .map((item: any) => item.str || '')
-                .join(' ')
-                .replace(/\s+/g, ' ')
-                .trim();
-                
-              if (pageText && pageText.length > 5) {
-                altTextPages.push(pageText);
-              }
-            } catch (pageError) {
-              console.warn(`Error extracting from page ${i}:`, pageError);
-            }
-          }
-          
-          const altExtractedText = altTextPages.join('\n\n').trim();
-          if (altExtractedText && altExtractedText.length > 20) {
-            console.log('Alternative PDF.js approach succeeded');
-            return altExtractedText;
-          }
-          
-        } catch (altError) {
-          console.warn('Alternative PDF.js approach also failed:', altError);
-        }
       }
       
-      // Method 2: Enhanced binary text extraction for Hebrew PDFs
-      console.log('Attempting enhanced binary text extraction...');
+      // Method 2: Advanced binary Hebrew text extraction
+      console.log('Attempting advanced Hebrew text extraction...');
       const uint8Array = new Uint8Array(arrayBuffer);
       
-      // Try multiple decoding methods for Hebrew PDFs
-      const decodingMethods = [
+      // Create binary string for pattern matching
+      let pdfBinary = '';
+      for (let i = 0; i < Math.min(uint8Array.length, 1000000); i++) {
+        pdfBinary += String.fromCharCode(uint8Array[i]);
+      }
+      
+      console.log('Binary string created, length:', pdfBinary.length);
+      
+      // Advanced Hebrew text extraction with multiple patterns
+      const allExtractedTexts: string[] = [];
+      
+      // Pattern 1: Extract text between PDF text markers
+      const textMarkerPattern = /BT\s+([\s\S]*?)\s+ET/g;
+      let match;
+      while ((match = textMarkerPattern.exec(pdfBinary)) !== null) {
+        const cleaned = this.cleanAndReconstructHebrewText(match[1]);
+        if (cleaned.length > 3) {
+          allExtractedTexts.push(cleaned);
+        }
+      }
+      
+      // Pattern 2: Extract text from parentheses (common in PDF text encoding)
+      const parenthesesPattern = /\(([^)]+)\)/g;
+      while ((match = parenthesesPattern.exec(pdfBinary)) !== null) {
+        const cleaned = this.cleanAndReconstructHebrewText(match[1]);
+        if (cleaned.length > 2) {
+          allExtractedTexts.push(cleaned);
+        }
+      }
+      
+      // Pattern 3: Extract Hebrew character sequences
+      const hebrewPattern = /[\u0590-\u05FF\u0020-\u007E\s]{5,}/g;
+      while ((match = hebrewPattern.exec(pdfBinary)) !== null) {
+        const cleaned = this.cleanAndReconstructHebrewText(match[0]);
+        if (cleaned.length > 3) {
+          allExtractedTexts.push(cleaned);
+        }
+      }
+      
+      // Pattern 4: Try different encoding approaches
+      const encodingMethods = [
         { name: 'UTF-8', decoder: new TextDecoder('utf-8', { fatal: false }) },
         { name: 'Windows-1255', decoder: new TextDecoder('windows-1255', { fatal: false }) },
-        { name: 'ISO-8859-8', decoder: new TextDecoder('iso-8859-8', { fatal: false }) },
-        { name: 'UTF-16LE', decoder: new TextDecoder('utf-16le', { fatal: false }) },
-        { name: 'UTF-16BE', decoder: new TextDecoder('utf-16be', { fatal: false }) }
+        { name: 'ISO-8859-8', decoder: new TextDecoder('iso-8859-8', { fatal: false }) }
       ];
       
-      for (const method of decodingMethods) {
+      for (const method of encodingMethods) {
         try {
-          console.log(`Trying ${method.name} decoding...`);
-          const decodedText = method.decoder.decode(uint8Array);
+          console.log(`Trying ${method.name} encoding reconstruction...`);
+          const decoded = method.decoder.decode(uint8Array);
+          const textBlocks = decoded.match(/[\u0590-\u05FF\u0020-\u007E\s]{5,}/g) || [];
           
-          // Clean and analyze the decoded text
-          let cleanText = decodedText
-            .replace(/[\x00-\x08\x0B-\x1F\x7F-\x9F]/g, ' ') // Remove most control chars but keep \t and \n
-            .replace(/\uFEFF/g, '') // Remove BOM
-            .replace(/\s+/g, ' ')
-            .trim();
-          
-          // Look for Hebrew words (2+ Hebrew characters together)
-          const hebrewWords = cleanText.match(/[\u0590-\u05FF]{2,}/g) || [];
-          
-          // Look for English words (3+ Latin characters)  
-          const englishWords = cleanText.match(/[A-Za-z]{3,}/g) || [];
-          
-          // Look for numbers that could be dates or IDs
-          const numbers = cleanText.match(/\d{2,}/g) || [];
-          
-          // Look for specific Hebrew keywords
-          const hebrewKeywords = [
-            'ביטוח', 'לאומי', 'ועדה', 'רפואי', 'נכות', 'מבוטח', 
-            'זהות', 'תאריך', 'סניף', 'החלטה', 'אבחנה', 'אחוז'
-          ];
-          
-          let foundKeywords = 0;
-          for (const keyword of hebrewKeywords) {
-            if (cleanText.includes(keyword)) {
-              foundKeywords++;
+          for (const block of textBlocks.slice(0, 100)) {
+            const cleaned = this.cleanAndReconstructHebrewText(block);
+            if (cleaned.length > 3 && this.containsHebrewContent(cleaned)) {
+              allExtractedTexts.push(cleaned);
             }
           }
-          
-          console.log(`${method.name}: Hebrew words: ${hebrewWords.length}, English: ${englishWords.length}, Keywords: ${foundKeywords}`);
-          
-          // If we found Hebrew keywords or substantial text, this is likely the right encoding
-          if (foundKeywords > 0 || (hebrewWords.length > 5 && englishWords.length > 3)) {
-            const extractedContent = [
-              ...hebrewWords,
-              ...englishWords.filter(word => word.length > 2),
-              ...numbers
-            ].join(' ').replace(/\s+/g, ' ').trim();
-            
-            if (extractedContent.length > 50) {
-              console.log(`${method.name} decoding succeeded with ${extractedContent.length} characters`);
-              console.log('Sample:', extractedContent.substring(0, 300));
-              return extractedContent;
-            }
-          }
-          
         } catch (error) {
-          console.warn(`${method.name} decoding failed:`, error);
+          console.warn(`${method.name} encoding failed:`, error);
         }
       }
       
-      // Method 3: Binary string analysis as last resort
-      let binaryString = '';
-      for (let i = 0; i < Math.min(uint8Array.length, 500000); i++) { // Limit to 500KB
-        binaryString += String.fromCharCode(uint8Array[i]);
-      }
-      
-      console.log('Binary string analysis - length:', binaryString.length);
-      
-      // Enhanced extraction patterns for Hebrew documents
-      let extractedTexts: string[] = [];
-      
-      // Look for text between specific PDF markers
-      const patterns = [
-        /\(([\u0590-\u05FF\u0020-\u007E\s]+?)\)/g,  // Text in parentheses (Hebrew + Latin)
-        /\[([\u0590-\u05FF\u0020-\u007E\s]+?)\]/g,  // Text in brackets  
-        /BT\s+([\s\S]*?)\s+ET/g,                    // PDF text objects
-        /[\u0590-\u05FF][\u0590-\u05FF\u0020\s]{2,}/g // Hebrew text sequences
-      ];
-      
-      for (const pattern of patterns) {
-        const matches = binaryString.match(pattern);
-        if (matches) {
-          for (const match of matches) {
-            let cleaned = match
-              .replace(/[BT|ET|\(|\)|\[|\]]/g, '')
-              .replace(/\\[0-9]{3}/g, '') // Remove octal characters
-              .replace(/\s+/g, ' ')
-              .trim();
-            
-            // Keep text with Hebrew or meaningful Latin content
-            if ((cleaned.length > 3) && 
-                (/[\u0590-\u05FF]/.test(cleaned) || 
-                 (/[A-Za-z]{3,}/.test(cleaned) && cleaned.length > 5))) {
-              extractedTexts.push(cleaned);
-            }
-          }
-        }
-      }
-      
-      // Join and clean the extracted text
-      let finalText = extractedTexts
+      // Combine and clean all extracted text
+      let combinedText = allExtractedTexts
         .filter((text, index, array) => array.indexOf(text) === index) // Remove duplicates
+        .map(text => this.finalHebrewTextCleanup(text))
+        .filter(text => text.length > 2)
         .join(' ')
         .replace(/\s+/g, ' ')
         .trim();
       
-      console.log(`Binary extraction yielded ${finalText.length} characters`);
-      if (finalText.length > 0) {
-        console.log('Sample extracted text:', finalText.substring(0, 200));
-      }
+      console.log(`Advanced extraction yielded ${combinedText.length} characters`);
+      console.log('- Clean text sample (first 500 chars):', combinedText.substring(0, 500));
+      console.log('- Clean text sample (last 500 chars):', combinedText.substring(Math.max(0, combinedText.length - 500)));
+      console.log('- Hebrew content detected:', this.containsHebrewContent(combinedText));
+      console.log('- Contains medical keywords:', this.containsMedicalKeywords(combinedText));
       
-      if (finalText && finalText.length > 20) {
-        return finalText;
+      if (combinedText && combinedText.length > 30) {
+        return combinedText;
       }
       
       // If all else fails, provide a helpful error message
@@ -253,6 +165,68 @@ export class PdfService {
     }
   }
   
+  // Advanced Hebrew text cleaning and reconstruction methods
+  private static cleanAndReconstructHebrewText(text: string): string {
+    let cleaned = text
+      .replace(/BT|ET|\(|\)|\[|\]/g, '') // Remove PDF markers
+      .replace(/\\[0-9]{3}/g, '') // Remove octal escape sequences
+      .replace(/[<>]/g, '') // Remove angle brackets
+      .replace(/\/[A-Za-z]+/g, '') // Remove PDF commands like /Tj, /TJ
+      .replace(/[\x00-\x08\x0B-\x1F\x7F]/g, ' ') // Remove control characters except \t and \n
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+    
+    // Hebrew character normalization and fixing common encoding issues
+    cleaned = cleaned
+      .replace(/[״״]/g, '"') // Normalize Hebrew quotation marks
+      .replace(/[׳']/g, "'") // Normalize Hebrew apostrophes
+      .replace(/[\u05F0-\u05F4]/g, '') // Remove Hebrew ligatures that may cause issues
+      .replace(/[\u0591-\u05C7]/g, '') // Remove Hebrew cantillation marks and diacritics
+      .replace(/\u05BE/g, '-') // Replace Hebrew maqaf with hyphen
+      .replace(/\u05C0/g, '|') // Replace Hebrew paseq
+      .replace(/\u05C3/g, ':') // Replace Hebrew sof pasuq
+      
+      // Fix common character substitutions in corrupted Hebrew PDFs
+      .replace(/×/g, 'א') // Sometimes × becomes א
+      .replace(/÷/g, 'ב') // Sometimes ÷ becomes ב
+      .replace(/[^\u0590-\u05FF\u0020-\u007E\s\d]/g, ' ') // Keep only Hebrew, Latin, numbers, and basic punctuation
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    return cleaned;
+  }
+  
+  private static finalHebrewTextCleanup(text: string): string {
+    return text
+      .replace(/[^\u0590-\u05FF\u0020-\u007E\s\d\-.,;:()\[\]]/g, ' ') // Keep only valid characters
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/\s*([.,;:!?])\s*/g, '$1 ') // Fix punctuation spacing
+      .replace(/\s+$/, '') // Remove trailing spaces
+      .trim();
+  }
+  
+  private static containsHebrewContent(text: string): boolean {
+    const hebrewChars = text.match(/[\u0590-\u05FF]/g) || [];
+    return hebrewChars.length > 10; // Need at least 10 Hebrew characters
+  }
+  
+  private static containsMedicalKeywords(text: string): boolean {
+    const medicalKeywords = [
+      'ביטוח', 'לאומי', 'ועדה', 'רפואי', 'נכות', 'מבוטח', 'זהות', 
+      'תאריך', 'סניף', 'החלטה', 'אבחנה', 'אחוז', 'נכות', 'פגיעה',
+      'טופס', 'מידת', 'שקלול', 'פטור', 'ממס', 'ליקוי', 'סעיף'
+    ];
+    
+    let found = 0;
+    for (const keyword of medicalKeywords) {
+      if (text.includes(keyword)) {
+        found++;
+      }
+    }
+    
+    return found > 0;
+  }
+
   static validateExtractedText(text: string, fileName: string): void {
     if (!text || text.trim().length < 20) {
       throw new Error(`הקובץ ${fileName} לא מכיל מספיק טקסט קריא`);
