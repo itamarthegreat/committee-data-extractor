@@ -26,23 +26,31 @@ export class ExcelExporter {
   private static createEnhancedSummarySheet(workbook: XLSX.WorkBook, documents: ProcessedDocument[]): void {
     const summaryData = [
       [
-        'מס"ד', 'שם קובץ', 'סוג ועדה', 'תאריך ועדה', 'סניף', 
-        'שם מבוטח', 'ת.ז', 'תאריך פגיעה', 'חברי ועדה', 
-        'מס\' אבחנות', 'מס\' החלטות', 'מס\' שקלולים', 'סטטוס'
+        'מס"ד', 'שם קובץ', 'סוג ועדה', 'שם טופס', 'סניף הוועדה', 'שם המבוטח', 'ת.ז:', 
+        'תאריך פגיעה(רק באיבה,נכות מעבודה)', 'משתתפי הועדה', 'תקופה', 'אבחנה', 
+        'סעיף ליקוי', 'אחוז הנכות הנובע מהפגיעה', 'הערות', 'מתאריך', 'עד תאריך', 
+        'מידת הנכות', 'אחוז הנכות משוקלל', 'שקלול לפטור ממס', 'סטטוס'
       ],
       ...documents.map((doc, index) => [
         index + 1,
         doc.fileName,
-        doc.committeeType,
-        doc.committeeDate,
-        doc.committeeBranch,
-        doc.insuredName,
-        doc.idNumber,
-        doc.injuryDate || '-',
-        doc.committeeMembers.length,
-        doc.diagnoses.length,
-        doc.decisionTable.length,
-        doc.disabilityWeightTable.length,
+        doc["סוג ועדה"] || '-',
+        doc["שם טופס"] || '-',
+        doc["סניף הוועדה"] || '-',
+        doc["שם המבוטח"] || '-',
+        doc["ת.ז:"] || '-',
+        doc["תאריך פגיעה(רק באיבה,נכות מעבודה)"] || '-',
+        doc["משתתפי הועדה"] || '-',
+        doc["תקופה"] || '-',
+        doc["אבחנה"] || '-',
+        doc["סעיף ליקוי"] || '-',
+        doc["אחוז הנכות הנובע מהפגיעה"] || '-',
+        doc["הערות"] || '-',
+        doc["מתאריך"] || '-',
+        doc["עד תאריך"] || '-',
+        doc["מידת הנכות"] || '-',
+        doc["אחוז הנכות משוקלל"] || '-',
+        doc["שקלול לפטור ממס"] || '-',
         doc.processingStatus === 'completed' ? '✓ הושלם' : 
         doc.processingStatus === 'error' ? '✗ שגיאה' : '⏳ בעיבוד'
       ])
@@ -54,16 +62,24 @@ export class ExcelExporter {
     summarySheet['!cols'] = [
       { wch: 6 },   // מס"ד
       { wch: 25 },  // שם הקובץ
-      { wch: 20 },  // סוג הועדה
-      { wch: 12 },  // תאריך ועדה
-      { wch: 15 },  // סניף
+      { wch: 15 },  // סוג ועדה
+      { wch: 15 },  // שם טופס
+      { wch: 15 },  // סניף הוועדה
       { wch: 20 },  // שם המבוטח
-      { wch: 12 },  // ת.ז
-      { wch: 12 },  // תאריך פגיעה
-      { wch: 10 },  // מספר אבחנות
-      { wch: 10 },  // מספר החלטות
-      { wch: 15 },  // מספר איברים
-      { wch: 20 }   // סטטוס עיבוד
+      { wch: 12 },  // ת.ז:
+      { wch: 20 },  // תאריך פגיעה(רק באיבה,נכות מעבודה)
+      { wch: 15 },  // משתתפי הועדה
+      { wch: 12 },  // תקופה
+      { wch: 15 },  // אבחנה
+      { wch: 15 },  // סעיף ליקוי
+      { wch: 20 },  // אחוז הנכות הנובע מהפגיעה
+      { wch: 15 },  // הערות
+      { wch: 12 },  // מתאריך
+      { wch: 12 },  // עד תאריך
+      { wch: 15 },  // מידת הנכות
+      { wch: 20 },  // אחוז הנכות משוקלל
+      { wch: 20 },  // שקלול לפטור ממס
+      { wch: 15 }   // סטטוס עיבוד
     ];
     
     XLSX.utils.book_append_sheet(workbook, summarySheet, 'סיכום כללי');
@@ -76,72 +92,29 @@ export class ExcelExporter {
     const mainData = [
       ['שדה', 'ערך'],
       ['שם הקובץ', doc.fileName],
-      ['סוג הועדה', doc.committeeType],
-      ['תאריך ועדה', doc.committeeDate],
-      ['סניף הועדה', doc.committeeBranch],
-      ['שם המבוטח', doc.insuredName],
-      ['תעודת זהות', doc.idNumber],
-      ['תאריך פגיעה', doc.injuryDate || 'לא רלוונטי']
+      ['סוג ועדה', doc["סוג ועדה"] || 'לא זוהה'],
+      ['שם טופס', doc["שם טופס"] || 'לא זוהה'],
+      ['סניף הוועדה', doc["סניף הוועדה"] || 'לא זוהה'],
+      ['שם המבוטח', doc["שם המבוטח"] || 'לא זוהה'],
+      ['ת.ז:', doc["ת.ז:"] || 'לא נמצא'],
+      ['תאריך פגיעה(רק באיבה,נכות מעבודה)', doc["תאריך פגיעה(רק באיבה,נכות מעבודה)"] || 'לא רלוונטי'],
+      ['משתתפי הועדה', doc["משתתפי הועדה"] || 'לא זוהו'],
+      ['תקופה', doc["תקופה"] || 'לא צוינה'],
+      ['אבחנה', doc["אבחנה"] || 'לא צוינה'],
+      ['סעיף ליקוי', doc["סעיף ליקוי"] || 'לא צוין'],
+      ['אחוז הנכות הנובע מהפגיעה', doc["אחוז הנכות הנובע מהפגיעה"] || 'לא צוין'],
+      ['הערות', doc["הערות"] || 'אין'],
+      ['מתאריך', doc["מתאריך"] || 'לא צוין'],
+      ['עד תאריך', doc["עד תאריך"] || 'לא צוין'],
+      ['מידת הנכות', doc["מידת הנכות"] || 'לא צוינה'],
+      ['אחוז הנכות משוקלל', doc["אחוז הנכות משוקלל"] || 'לא צוין'],
+      ['שקלול לפטור ממס', doc["שקלול לפטור ממס"] || 'לא צוין']
     ];
     
     const mainSheet = XLSX.utils.aoa_to_sheet(mainData);
     mainSheet['!cols'] = [{ wch: 15 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(workbook, mainSheet, `מסמך ${docNum} - פרטים`);
     
-    // Committee members
-    if (doc.committeeMembers.length > 0) {
-      const membersData = [
-        ['מס"ד', 'שם החבר', 'תפקיד'],
-        ...doc.committeeMembers.map((member, idx) => [idx + 1, member.name, member.role])
-      ];
-      const membersSheet = XLSX.utils.aoa_to_sheet(membersData);
-      membersSheet['!cols'] = [{ wch: 6 }, { wch: 25 }, { wch: 20 }];
-      XLSX.utils.book_append_sheet(workbook, membersSheet, `מסמך ${docNum} - חברי ועדה`);
-    }
-    
-    // Diagnoses
-    if (doc.diagnoses.length > 0) {
-      const diagnosesData = [
-        ['מס"ד', 'קוד אבחנה', 'תיאור האבחנה'],
-        ...doc.diagnoses.map((diagnosis, idx) => [idx + 1, diagnosis.code, diagnosis.description])
-      ];
-      const diagnosesSheet = XLSX.utils.aoa_to_sheet(diagnosesData);
-      diagnosesSheet['!cols'] = [{ wch: 6 }, { wch: 15 }, { wch: 40 }];
-      XLSX.utils.book_append_sheet(workbook, diagnosesSheet, `מסמך ${docNum} - אבחנות`);
-    }
-    
-    // Decision table
-    if (doc.decisionTable.length > 0) {
-      const decisionData = [
-        ['מס"ד', 'פריט/נושא', 'החלטה', 'אחוז נכות', 'הערות'],
-        ...doc.decisionTable.map((row, idx) => [
-          idx + 1,
-          row.item, 
-          row.decision, 
-          row.percentage?.toString() || 'לא רלוונטי', 
-          row.notes || 'אין הערות'
-        ])
-      ];
-      const decisionSheet = XLSX.utils.aoa_to_sheet(decisionData);
-      decisionSheet['!cols'] = [{ wch: 6 }, { wch: 25 }, { wch: 20 }, { wch: 12 }, { wch: 25 }];
-      XLSX.utils.book_append_sheet(workbook, decisionSheet, `מסמך ${docNum} - החלטות`);
-    }
-    
-    // Disability weight table
-    if (doc.disabilityWeightTable.length > 0) {
-      const disabilityData = [
-        ['מס"ד', 'איבר/חלק גוף', 'אחוז נכות', 'סוג הנכות', 'חישוב הנכות'],
-        ...doc.disabilityWeightTable.map((row, idx) => [
-          idx + 1,
-          row.bodyPart, 
-          row.percentage.toString() + '%', 
-          row.type, 
-          row.calculation
-        ])
-      ];
-      const disabilitySheet = XLSX.utils.aoa_to_sheet(disabilityData);
-      disabilitySheet['!cols'] = [{ wch: 6 }, { wch: 20 }, { wch: 12 }, { wch: 15 }, { wch: 25 }];
-      XLSX.utils.book_append_sheet(workbook, disabilitySheet, `מסמך ${docNum} - שקלול נכות`);
-    }
+    // Note: For the enhanced system, detailed tables are included in the main data structure
   }
 }

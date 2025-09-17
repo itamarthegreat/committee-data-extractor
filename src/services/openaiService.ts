@@ -11,6 +11,56 @@ export class OpenAIService {
     });
   }
   
+  async processDocumentFile(file: File, fileName: string): Promise<Partial<ProcessedDocument>> {
+    console.log(`Processing ${fileName} with OpenAI Vision API`);
+    
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: this.getSystemPrompt()
+          },
+          {
+            role: "user", 
+            content: [
+              { type: "text", text: "Analyze this PDF and return JSON." },
+              {
+                type: "image_url",
+                image_url: {
+                  url: await this.fileToBase64(file)
+                }
+              }
+            ]
+          }
+        ]
+      });
+
+      const content = completion.choices[0].message.content;
+      console.log(`OpenAI raw response for ${fileName}:`, content);
+      
+      if (!content) {
+        throw new Error('OpenAI returned empty response');
+      }
+
+      return this.parseOpenAIResponse(content);
+      
+    } catch (error) {
+      console.error('OpenAI processing error:', error);
+      throw new Error(`שגיאה בעיבוד עם OpenAI: ${error.message}`);
+    }
+  }
+
+  private async fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+  
   async processDocumentText(text: string, fileName: string): Promise<Partial<ProcessedDocument>> {
     // Clean and normalize Hebrew text first
     const cleanedText = this.cleanHebrewText(text);
@@ -34,7 +84,7 @@ export class OpenAIService {
       throw new Error('הטקסט שנחלץ מהקובץ אינו קריא מספיק. ייתכן שהקובץ מוצפן, מוגן או מכיל רק תמונות שצריכות OCR.');
     }
     
-    const prompt = this.createImprovedExtractionPrompt(truncatedText);
+    const prompt = this.getSystemPrompt();
     
     try {
       const completion = await this.openai.chat.completions.create({
@@ -57,71 +107,58 @@ export class OpenAIService {
     }
   }
   
-  private createImprovedExtractionPrompt(text: string): string {
-    return `
-אתה מומחה בחילוץ מידע ממסמכי ביטוח לאומי בעברית. חלץ את הפרטים בדיוק לפי המבנה הבא:
+  private getSystemPrompt(): string {
+    return `You are a backend extraction agent for a law-firm system.
 
-טקסט המסמך:
-${text}
+Goal:
+- Receive a PDF file of a medical committee protocol (Hebrew).
+- Extract the exact values for each of the following headers (Hebrew).
+- Return one JSON object with these exact keys and values as they appear in the document.
+- Do not calculate or interpret anything. If a value is missing or unreadable, return null.
 
-**חפש את הפרטים הבאים בדיוק:**
+Headers:
+"סוג ועדה",
+"שם טופס",
+"סניף הוועדה",
+"שם המבוטח",
+"ת.ז:",
+"תאריך פגיעה(רק באיבה,נכות מעבודה)",
+"משתתפי הועדה",
+"תקופה",
+"אבחנה",
+"סעיף ליקוי",
+"אחוז הנכות הנובע מהפגיעה",
+"הערות",
+"מתאריך",
+"עד תאריך",
+"מידת הנכות",
+"אחוז הנכות משוקלל",
+"שקלול לפטור ממס"
 
-**פרטים בסיסיים (חובה!):**
-1. סוג ועדה: חפש "נכות", "שיקום", "חוות דעת", "ועדה רפואית" - זהה את סוג הועדה
-2. שם המבוטח: שם מלא בעברית (לרוב אחרי "שם:", "מבוטח:" או "ת.ז:")
-3. תעודת זהות: בדיוק 9 ספרות (לרוב אחרי "ת.ז:", "מספר זהות", "מס' זהות")
-4. סניף הוועדה: שם מקום/עיר (חפש "סניף", "סניף הוועדה", "סניף ראשי")
-5. תאריך ועדה: תאריך הישיבה (חפש "תאריך הוועדה", "תאריך ישיבה")
-6. תאריך פגיעה: רק אם קיים - בנכות מעבודה/פעולות איבה
-
-**משתתפי הועדה:**
-חפש "משתתפי הועדה" ולאחר מכן טבלה עם שם ותפקיד:
-- חפש שמות רופאים עם "ד"ר" 
-- חפש "מזכיר הישיבה", "פסיכיאטריה", "אורתופדיה" וכו'
-
-**אבחנות:**  
-חפש בטבלת "קביעת אחוזים רפואיים" או "אבחנות":
-- קוד אבחנה (מספרים וספרות)
-- תיאור האבחנה
-
-**טבלת החלטות:**
-חפש "קביעת אחוזים רפואיים" או טבלה עם העמודות:
-- תקופה (מתאריך/עד תאריך)
-- אבחנה
-- סעיף
-- ליקוי/תיאור  
-- אחוז הנכות
-
-**שקלול נכות:**
-חפש טבלה בתחתית עם:
-- תאריכים (מ/עד)
-- מידת הנכות (זמני/קבוע)
-- אחוז נכות
-- אחוז משוקלל
-
-**דוגמה לפורמט הצפוי:**
-בהתבסס על הדוגמה:
-- סוג ועדה: "נכות" 
-- שם המבוטח: "חיים ירין מזלטרין"
-- ת.ז: "305566515"
-- סניף הוועדה: "סניף ראשי רמלה" 
-- תאריך ועדה: "18/05/2025"
-
-**החזר בפורמט JSON בלבד:**
+Output:
+\`\`\`json
 {
-  "committeeType": "סוג הועדה המדויק או 'לא זוהה'",
-  "committeeDate": "תאריך בפורמט YYYY-MM-DD או 'לא נמצא'",
-  "committeeBranch": "שם סניף מדויק או 'לא זוהה'", 
-  "insuredName": "שם מלא מדויק או 'לא זוהה'",
-  "idNumber": "9 ספרות מדויקות או 'לא נמצא'",
-  "injuryDate": "תאריך פגיעה או 'לא רלוונטי'",
-  "committeeMembers": [{"name": "שם מלא", "role": "תפקיד מדויק"}],
-  "diagnoses": [{"code": "קוד", "description": "תיאור מלא"}],
-  "decisionTable": [{"item": "תיאור הליקוי", "decision": "החלטה", "percentage": מספר, "notes": "הערות"}],
-  "disabilityWeightTable": [{"bodyPart": "איבר/מערכת", "percentage": מספר, "type": "זמני/קבוע", "calculation": "פירוט"}]
+  "סוג ועדה": "...",
+  "שם טופס": "...",
+  "סניף הוועדה": "...",
+  "שם המבוטח": "...",
+  "ת.ז:": "...",
+  "תאריך פגיעה(רק באיבה,נכות מעבודה)": "...",
+  "משתתפי הועדה": "...",
+  "תקופה": "...",
+  "אבחנה": "...",
+  "סעיף ליקוי": "...",
+  "אחוז הנכות הנובע מהפגיעה": "...",
+  "הערות": "...",
+  "מתאריך": "...",
+  "עד תאריך": "...",
+  "מידת הנכות": "...",
+  "אחוז הנכות משוקלל": "...",
+  "שקלול לפטור ממס": "..."
 }
+\`\`\`
 
-**חשוב מאוד:** אל תחזיר "לא נמצא" אלא אם אתה באמת לא מוצא את המידע במסמך!`;
+Return only this JSON. No extra text.`;
   }
   
   private parseOpenAIResponse(content: string): Partial<ProcessedDocument> {
@@ -137,16 +174,23 @@ ${text}
       const extractedData = JSON.parse(cleanContent);
       
       return {
-        committeeType: extractedData.committeeType || 'לא זוהה',
-        committeeDate: extractedData.committeeDate || '',
-        committeeBranch: extractedData.committeeBranch || 'לא זוהה',
-        insuredName: extractedData.insuredName || 'לא זוהה',
-        idNumber: extractedData.idNumber || '',
-        injuryDate: extractedData.injuryDate || '',
-        committeeMembers: extractedData.committeeMembers || [],
-        diagnoses: extractedData.diagnoses || [],
-        decisionTable: extractedData.decisionTable || [],
-        disabilityWeightTable: extractedData.disabilityWeightTable || [],
+        "סוג ועדה": extractedData["סוג ועדה"] || null,
+        "שם טופס": extractedData["שם טופס"] || null,
+        "סניף הוועדה": extractedData["סניף הוועדה"] || null,
+        "שם המבוטח": extractedData["שם המבוטח"] || null,
+        "ת.ז:": extractedData["ת.ז:"] || null,
+        "תאריך פגיעה(רק באיבה,נכות מעבודה)": extractedData["תאריך פגיעה(רק באיבה,נכות מעבודה)"] || null,
+        "משתתפי הועדה": extractedData["משתתפי הועדה"] || null,
+        "תקופה": extractedData["תקופה"] || null,
+        "אבחנה": extractedData["אבחנה"] || null,
+        "סעיף ליקוי": extractedData["סעיף ליקוי"] || null,
+        "אחוז הנכות הנובע מהפגיעה": extractedData["אחוז הנכות הנובע מהפגיעה"] || null,
+        "הערות": extractedData["הערות"] || null,
+        "מתאריך": extractedData["מתאריך"] || null,
+        "עד תאריך": extractedData["עד תאריך"] || null,
+        "מידת הנכות": extractedData["מידת הנכות"] || null,
+        "אחוז הנכות משוקלל": extractedData["אחוז הנכות משוקלל"] || null,
+        "שקלול לפטור ממס": extractedData["שקלול לפטור ממס"] || null,
       };
       
     } catch (parseError) {

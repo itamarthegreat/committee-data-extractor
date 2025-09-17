@@ -11,56 +11,41 @@ export class DocumentProcessor {
   
   async processFile(file: File): Promise<ProcessedDocument> {
     try {
-      console.log(`Starting processing of ${file.name}`);
+      console.log(`Starting to process file: ${file.name}`);
       
-      // Step 1: Extract text from PDF
-      const extractedText = await PdfService.extractTextFromPdf(file);
-      
-      // Step 2: Validate extracted text
-      PdfService.validateExtractedText(extractedText, file.name);
-      
-      console.log(`Extracted ${extractedText.length} characters from ${file.name}`);
-      
-      // Step 3: Process with OpenAI
-      const extractedData = await this.openaiService.processDocumentText(extractedText, file.name);
-      
-      // Step 4: Create final document object
-      const processedDocument: ProcessedDocument = {
-        fileName: file.name,
-        committeeType: extractedData.committeeType || 'לא זוהה',
-        committeeDate: extractedData.committeeDate || '',
-        committeeBranch: extractedData.committeeBranch || 'לא זוהה',
-        insuredName: extractedData.insuredName || 'לא זוהה',
-        idNumber: extractedData.idNumber || '',
-        injuryDate: extractedData.injuryDate || '',
-        committeeMembers: extractedData.committeeMembers || [],
-        diagnoses: extractedData.diagnoses || [],
-        decisionTable: extractedData.decisionTable || [],
-        disabilityWeightTable: extractedData.disabilityWeightTable || [],
-        processingStatus: 'completed'
-      };
-      
-      console.log(`Successfully processed ${file.name}`);
-      return processedDocument;
-      
-    } catch (error) {
-      console.error(`Error processing file ${file.name}:`, error);
+      // Process with OpenAI Vision API directly
+      const extractedData = await this.openaiService.processDocumentFile(file, file.name);
       
       return {
         fileName: file.name,
-        committeeType: '',
-        committeeDate: '',
-        committeeBranch: '',
-        insuredName: '',
-        idNumber: '',
-        injuryDate: '',
-        committeeMembers: [],
-        diagnoses: [],
-        decisionTable: [],
-        disabilityWeightTable: [],
+        processingStatus: 'completed',
+        ...extractedData
+      } as ProcessedDocument;
+      
+    } catch (error) {
+      console.error(`Error processing file ${file.name}:`, error);
+      return {
+        fileName: file.name,
+        "סוג ועדה": null,
+        "שם טופס": null,
+        "סניף הוועדה": null,
+        "שם המבוטח": null,
+        "ת.ז:": null,
+        "תאריך פגיעה(רק באיבה,נכות מעבודה)": null,
+        "משתתפי הועדה": null,
+        "תקופה": null,
+        "אבחנה": null,
+        "סעיף ליקוי": null,
+        "אחוז הנכות הנובע מהפגיעה": null,
+        "הערות": null,
+        "מתאריך": null,
+        "עד תאריך": null,
+        "מידת הנכות": null,
+        "אחוז הנכות משוקלל": null,
+        "שקלול לפטור ממס": null,
         processingStatus: 'error',
-        errorMessage: `שגיאה בעיבוד הקובץ: ${error.message}`,
-      };
+        errorMessage: error.message
+      } as ProcessedDocument;
     }
   }
   

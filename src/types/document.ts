@@ -24,16 +24,23 @@ export interface DisabilityWeightRow {
 
 export interface ProcessedDocument {
   fileName: string;
-  committeeType: string;
-  committeeDate: string;
-  committeeBranch: string;
-  insuredName: string;
-  idNumber: string;
-  injuryDate?: string;
-  committeeMembers: CommitteeMember[];
-  diagnoses: Diagnosis[];
-  decisionTable: DecisionRow[];
-  disabilityWeightTable: DisabilityWeightRow[];
+  "סוג ועדה": string | null;
+  "שם טופס": string | null;
+  "סניף הוועדה": string | null;
+  "שם המבוטח": string | null;
+  "ת.ז:": string | null;
+  "תאריך פגיעה(רק באיבה,נכות מעבודה)": string | null;
+  "משתתפי הועדה": string | null;
+  "תקופה": string | null;
+  "אבחנה": string | null;
+  "סעיף ליקוי": string | null;
+  "אחוז הנכות הנובע מהפגיעה": string | null;
+  "הערות": string | null;
+  "מתאריך": string | null;
+  "עד תאריך": string | null;
+  "מידת הנכות": string | null;
+  "אחוז הנכות משוקלל": string | null;
+  "שקלול לפטור ממס": string | null;
   processingStatus: 'pending' | 'processing' | 'completed' | 'error';
   errorMessage?: string;
 }
