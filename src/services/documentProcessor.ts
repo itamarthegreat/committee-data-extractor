@@ -1,11 +1,28 @@
 import { ProcessedDocument } from '@/types/document';
 import { OpenAIService } from './openaiService';
+import { GoogleOcrService } from './googleOcrService';
 
 export class DocumentProcessor {
   private openaiService: OpenAIService;
+  private googleApiKey: string | null = null;
   
-  constructor(apiKey: string) {
+  constructor(apiKey: string, googleApiKey?: string) {
     this.openaiService = new OpenAIService(apiKey);
+    this.googleApiKey = googleApiKey || this.getStoredGoogleApiKey();
+  }
+  
+  private getStoredGoogleApiKey(): string | null {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('googleCloudApiKey');
+    }
+    return null;
+  }
+  
+  setGoogleApiKey(apiKey: string): void {
+    this.googleApiKey = apiKey;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('googleCloudApiKey', apiKey);
+    }
   }
   
   async processFile(file: File): Promise<ProcessedDocument> {
@@ -15,18 +32,46 @@ export class DocumentProcessor {
       let extractedText = '';
       
       try {
-        // Use advanced PDF text extraction
-        console.log('Extracting text from PDF...');
-        extractedText = await this.extractPdfText(file);
-        
-        if (!extractedText || extractedText.length < 20) {
-          throw new Error('Could not extract sufficient text');
+        // Try Google OCR first if API key is available
+        if (this.googleApiKey) {
+          console.log('Using Google OCR for text extraction...');
+          extractedText = await GoogleOcrService.extractTextFromPdf(file, this.googleApiKey);
+          
+          if (extractedText && extractedText.length > 30) {
+            console.log(`Google OCR successfully extracted ${extractedText.length} characters`);
+          } else {
+            throw new Error('Google OCR did not extract sufficient text');
+          }
+        } else {
+          // Fallback to basic extraction
+          console.log('No Google API key found, using basic extraction...');
+          extractedText = await this.extractPdfText(file);
+          
+          if (!extractedText || extractedText.length < 20) {
+            throw new Error('Could not extract sufficient text');
+          }
         }
         
         console.log(`Successfully extracted ${extractedText.length} characters`);
         
       } catch (error) {
-        console.error('PDF extraction failed:', error);
+        console.error('Text extraction failed:', error);
+        
+        if (!this.googleApiKey) {
+          throw new Error(`
+לא ניתן לחלץ טקסט מהקובץ.
+
+🔑 הוסף מפתח Google Cloud Vision API לתוצאות טובות יותר:
+
+1. צור פרויקט ב-Google Cloud Console
+2. הפעל את Vision API
+3. צור API Key
+4. הוסף את המפתח בהגדרות המערכת
+
+או נסה קובץ PDF פשוט יותר.
+          `);
+        }
+        
         throw new Error(`לא ניתן לחלץ טקסט מהקובץ: ${error.message}`);
       }
       

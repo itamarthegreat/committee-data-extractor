@@ -5,6 +5,7 @@ import { FileText, Upload, Download, Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import FileUpload from '@/components/FileUpload';
 import ApiKeyInput from '@/components/ApiKeyInput';
+import GoogleApiKeyInput from '@/components/GoogleApiKeyInput';
 import ProcessingResults from '@/components/ProcessingResults';
 import { ProcessedDocument } from '@/types/document';
 import { DocumentProcessor } from '@/services/documentProcessor';
@@ -13,6 +14,7 @@ import { ExcelExporter } from '@/services/excelExporter';
 const Index = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [apiKey, setApiKey] = useState<string>('');
+  const [googleApiKey, setGoogleApiKey] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState<ProcessedDocument[]>([]);
   const { toast } = useToast();
@@ -25,6 +27,10 @@ const Index = () => {
     setApiKey(key);
     // Store in localStorage for convenience
     localStorage.setItem('openai_api_key', key);
+  };
+
+  const handleGoogleApiKeyChange = (key: string) => {
+    setGoogleApiKey(key);
   };
 
   const processDocuments = async () => {
@@ -82,8 +88,8 @@ const Index = () => {
       
       setResults(processingResults);
 
-      // Initialize document processor with API key
-      const processor = new DocumentProcessor(apiKey);
+      // Initialize document processor with API keys
+      const processor = new DocumentProcessor(apiKey, googleApiKey);
       
       // Process all files using the new service architecture
       const processedResults = await processor.processMultipleFiles(files);
@@ -163,6 +169,8 @@ const Index = () => {
               </div>
               <ApiKeyInput value={apiKey} onChange={handleApiKeyChange} />
             </Card>
+
+            <GoogleApiKeyInput onApiKeyChange={handleGoogleApiKeyChange} />
 
             <Card className="p-6 shadow-soft border-0 bg-card/50 backdrop-blur-sm">
               <div className="flex items-center gap-3 mb-6">
