@@ -12,8 +12,13 @@ export class PdfService {
       try {
         pdfjsLib = await import('pdfjs-dist');
         
-        // Configure worker properly
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+        // Configure worker properly - use more reliable CDN
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+        
+        // Fallback worker configuration
+        if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.4.54/build/pdf.worker.min.js';
+        }
         
         console.log('Loading PDF with pdfjs-dist...');
         
@@ -91,7 +96,7 @@ export class PdfService {
         // First, convert PDF pages to images using PDF.js
         if (!pdfjsLib) {
           pdfjsLib = await import('pdfjs-dist');
-          pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.4.54/build/pdf.worker.min.js';
         }
         
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
@@ -177,39 +182,153 @@ export class PdfService {
     const uint8Array = new Uint8Array(arrayBuffer);
     const textResults: string[] = [];
     
-    // Try different encoding methods
-    const encodings = ['utf-8', 'windows-1255', 'iso-8859-8'];
+    // Convert to binary string for pattern matching
+    let binaryString = '';
+    for (let i = 0; i < Math.min(uint8Array.length, 1000000); i++) {
+      binaryString += String.fromCharCode(uint8Array[i]);
+    }
     
-    for (const encoding of encodings) {
-      try {
-        const decoder = new TextDecoder(encoding, { fatal: false });
-        const decodedText = decoder.decode(uint8Array);
-        
-        // Extract text using regex patterns
-        const patterns = [
-          /\(([\u0590-\u05FF\s\u0020-\u007E]{3,}?)\)/g, // Text in parentheses
-          /[\u0590-\u05FF][\u0590-\u05FF\s\u0020-\u007E]{5,}/g, // Hebrew sequences
-        ];
-        
-        for (const pattern of patterns) {
-          const matches = decodedText.match(pattern) || [];
-          for (const match of matches.slice(0, 100)) { // Limit matches
-            const cleaned = this.cleanHebrewText(match.replace(/[()]/g, ''));
-            if (cleaned.length > 3 && this.containsHebrewContent(cleaned)) {
+    console.log('Binary string length:', binaryString.length);
+    
+    // Advanced pattern matching for Hebrew PDF text
+    const extractionPatterns = [
+      // Pattern 1: Text streams between BT/ET markers
+      {
+        name: 'BT_ET_blocks',
+        regex: /BT\s+([\s\S]*?)\s+ET/g,
+        process: (match: string) => this.extractFromPdfTextBlock(match)
+      },
+      
+      // Pattern 2: Text in parentheses (common PDF text encoding)
+      {
+        name: 'parentheses_text',
+        regex: /\(([^)]{3,})\)/g,
+        process: (match: string) => this.decodePdfString(match.slice(1, -1))
+      },
+      
+      // Pattern 3: Hex encoded strings
+      {
+        name: 'hex_strings',
+        regex: /<([0-9A-Fa-f\s]{6,})>/g,
+        process: (match: string) => this.decodeHexString(match.slice(1, -1))
+      },
+      
+      // Pattern 4: Direct Hebrew text sequences
+      {
+        name: 'direct_hebrew',
+        regex: /[\u0590-\u05FF][\u0590-\u05FF\s\u0020-\u007E]{3,}/g,
+        process: (match: string) => this.cleanHebrewText(match)
+      }
+    ];
+    
+    // Apply all patterns
+    for (const pattern of extractionPatterns) {
+      console.log(`Applying pattern: ${pattern.name}`);
+      let match;
+      let matchCount = 0;
+      
+      while ((match = pattern.regex.exec(binaryString)) !== null && matchCount < 200) {
+        try {
+          const processed = pattern.process(match[1] || match[0]);
+          if (processed && processed.length > 2) {
+            const cleaned = this.cleanHebrewText(processed);
+            if (cleaned.length > 2 && this.isValidHebrewText(cleaned)) {
               textResults.push(cleaned);
             }
           }
+        } catch (err) {
+          // Continue processing other matches
+        }
+        matchCount++;
+      }
+      
+      console.log(`Pattern ${pattern.name} found ${matchCount} matches`);
+    }
+    
+    // Try different character encodings as fallback
+    const encodings = ['windows-1255', 'iso-8859-8', 'utf-8'];
+    for (const encoding of encodings) {
+      try {
+        const decoder = new TextDecoder(encoding, { fatal: false });
+        const decoded = decoder.decode(uint8Array);
+        
+        // Look for Hebrew words in decoded text
+        const hebrewMatches = decoded.match(/[\u0590-\u05FF]{2,}/g) || [];
+        for (const hebrewMatch of hebrewMatches.slice(0, 50)) {
+          const cleaned = this.cleanHebrewText(hebrewMatch);
+          if (cleaned.length > 1 && this.isValidHebrewText(cleaned)) {
+            textResults.push(cleaned);
+          }
         }
       } catch (err) {
-        console.warn(`Binary extraction with ${encoding} failed:`, err);
+        console.warn(`Encoding ${encoding} failed:`, err);
       }
     }
     
-    return textResults
-      .filter((text, index, array) => array.indexOf(text) === index) // Remove duplicates
-      .join(' ')
-      .replace(/\s+/g, ' ')
+    // Combine results and remove duplicates
+    const uniqueTexts = Array.from(new Set(textResults))
+      .filter(text => text.length > 2)
+      .sort((a, b) => b.length - a.length) // Sort by length, longest first
+      .slice(0, 100); // Take top 100 results
+    
+    console.log(`Found ${uniqueTexts.length} unique text fragments`);
+    
+    return uniqueTexts.join(' ').replace(/\s+/g, ' ').trim();
+  }
+  
+  private static extractFromPdfTextBlock(block: string): string {
+    // Remove PDF operators and extract actual text
+    return block
+      .replace(/\/[A-Za-z][A-Za-z0-9]*\s*/g, '') // Remove PDF operators like /Tj /TJ
+      .replace(/\d+(\.\d+)?\s+/g, '') // Remove numeric parameters
+      .replace(/\[[^\]]*\]/g, '') // Remove arrays
+      .replace(/[<>]/g, '') // Remove angle brackets
       .trim();
+  }
+  
+  private static decodePdfString(pdfString: string): string {
+    // Handle PDF string encoding
+    let decoded = pdfString;
+    
+    // Handle escape sequences
+    decoded = decoded
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\b/g, '\b')
+      .replace(/\\f/g, '\f')
+      .replace(/\\([()\\])/g, '$1')
+      .replace(/\\(\d{3})/g, (match, octal) => String.fromCharCode(parseInt(octal, 8)));
+    
+    return decoded;
+  }
+  
+  private static decodeHexString(hexString: string): string {
+    const hex = hexString.replace(/\s/g, '');
+    let result = '';
+    
+    for (let i = 0; i < hex.length; i += 2) {
+      const hexPair = hex.substr(i, 2);
+      if (hexPair.length === 2) {
+        const charCode = parseInt(hexPair, 16);
+        if (charCode > 0) {
+          result += String.fromCharCode(charCode);
+        }
+      }
+    }
+    
+    return result;
+  }
+  
+  private static isValidHebrewText(text: string): boolean {
+    const hebrewChars = (text.match(/[\u0590-\u05FF]/g) || []).length;
+    const totalChars = text.length;
+    
+    // Text should have at least 20% Hebrew characters or be meaningful Hebrew words
+    const hebrewRatio = hebrewChars / totalChars;
+    const hasHebrewWords = /[\u0590-\u05FF]{2,}/.test(text);
+    
+    return hebrewRatio > 0.2 || hasHebrewWords;
   }
   
   private static calculateTextReadability(text: string): number {
