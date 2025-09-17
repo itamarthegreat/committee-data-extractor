@@ -5,49 +5,46 @@ export class GoogleOcrService {
     try {
       console.log('Starting Google OCR extraction...');
       
-      // Try to convert PDF to images first
-      let images: string[] = [];
+      // First try to parse the document using direct extraction
+      let extractedTexts: string[] = [];
       
       try {
-        images = await this.convertPdfToImages(file);
-        console.log(`Successfully converted PDF to ${images.length} images`);
-      } catch (pdfError) {
-        console.warn('PDF to images conversion failed, trying alternative approach:', pdfError);
+        console.log('Trying direct PDF text extraction...');
+        const pdfText = await this.extractPdfContentDirectly(file);
         
-        // Alternative: Try to extract first page as image using canvas
-        try {
-          const firstPageImage = await this.extractFirstPageAsImage(file);
-          if (firstPageImage) {
-            images = [firstPageImage];
-            console.log('Successfully extracted first page as image');
-          }
-        } catch (altError) {
-          console.warn('Alternative image extraction also failed:', altError);
-          throw new Error('Could not extract images from PDF for OCR');
+        if (pdfText && pdfText.length > 50) {
+          console.log(`Extracted ${pdfText.length} characters directly from PDF`);
+          
+          // Process the extracted text with Google Vision API for better Hebrew handling
+          const processedText = await this.processTextWithGoogleOcr(pdfText, apiKey);
+          return processedText || pdfText;
         }
+        
+      } catch (directError) {
+        console.warn('Direct PDF text extraction failed:', directError);
       }
       
-      if (images.length === 0) {
-        throw new Error('No images could be extracted from PDF');
-      }
-      
-      // Process each image with Google Vision API
-      const extractedTexts: string[] = [];
-      
-      for (let i = 0; i < Math.min(images.length, 3); i++) { // Limit to 3 pages for performance
-        try {
-          console.log(`Processing page ${i + 1} with Google OCR...`);
+      // Fallback: Try to convert PDF to images and process with OCR
+      try {
+        const images = await this.convertPdfToImages(file);
+        
+        if (images.length > 0) {
+          console.log(`Processing ${images.length} PDF pages with Google OCR...`);
           
-          const text = await this.processImageWithGoogleOcr(images[i], apiKey);
-          
-          if (text && text.trim().length > 5) {
-            extractedTexts.push(text.trim());
-            console.log(`Page ${i + 1} OCR result length:`, text.length);
+          for (let i = 0; i < Math.min(images.length, 3); i++) {
+            try {
+              const text = await this.processImageWithGoogleOcr(images[i], apiKey);
+              if (text && text.trim().length > 10) {
+                extractedTexts.push(text.trim());
+                console.log(`Page ${i + 1} OCR result length:`, text.length);
+              }
+            } catch (pageError) {
+              console.warn(`Google OCR failed for page ${i + 1}:`, pageError);
+            }
           }
-          
-        } catch (pageError) {
-          console.warn(`Google OCR failed for page ${i + 1}:`, pageError);
         }
+      } catch (imageError) {
+        console.warn('Image-based OCR failed:', imageError);
       }
       
       const finalText = extractedTexts.join('\n\n').trim();
@@ -64,6 +61,116 @@ export class GoogleOcrService {
     } catch (error) {
       console.error('Google OCR extraction failed:', error);
       throw new Error(`Google OCR failed: ${error.message}`);
+    }
+  }
+  
+  private static async extractPdfContentDirectly(file: File): Promise<string> {
+    try {
+      // Try to extract text directly from PDF using FileReader
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      // Convert to string and look for readable text
+      let textContent = '';
+      
+      // Look for text in different encodings
+      try {
+        const decoder = new TextDecoder('utf-8', { fatal: false });
+        const decoded = decoder.decode(uint8Array);
+        
+        // Extract Hebrew and English text patterns
+        const textPatterns = [
+          /[\u05D0-\u05EA\s]{3,}/g, // Hebrew text
+          /[a-zA-Z\s]{3,}/g, // English text
+          /\d{9}/g, // ID numbers
+          /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}/g, // Dates
+        ];
+        
+        for (const pattern of textPatterns) {
+          const matches = decoded.match(pattern) || [];
+          textContent += matches.join(' ') + ' ';
+        }
+        
+        if (textContent.length > 50) {
+          return textContent.trim();
+        }
+        
+      } catch (decodingError) {
+        console.warn('UTF-8 decoding failed:', decodingError);
+      }
+      
+      // Alternative: Try to find readable text in the binary data
+      let binaryText = '';
+      for (let i = 0; i < Math.min(uint8Array.length, 500000); i++) {
+        const byte = uint8Array[i];
+        if ((byte >= 32 && byte <= 126) || // ASCII
+            (byte >= 0x05D0 && byte <= 0x05EA) || // Hebrew
+            byte === 10 || byte === 13 || byte === 9) {
+          binaryText += String.fromCharCode(byte);
+        } else if (binaryText.length > 0 && byte === 0) {
+          binaryText += ' ';
+        }
+      }
+      
+      // Extract meaningful patterns from binary text
+      const patterns = [
+        /[א-ת]+\s*[א-ת]*/g, // Hebrew names
+        /\b\d{9}\b/g, // ID numbers
+        /\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}\b/g, // Dates
+        /(ביטוח\s*לאומי|ועדה\s*רפואית|נכות|אבחנה)/gi, // Medical terms
+      ];
+      
+      let extractedText = '';
+      for (const pattern of patterns) {
+        const matches = binaryText.match(pattern) || [];
+        extractedText += matches.join(' ') + ' ';
+      }
+      
+      return extractedText.trim();
+      
+    } catch (error) {
+      console.error('Direct PDF text extraction failed:', error);
+      throw new Error('Could not extract text directly from PDF');
+    }
+  }
+  
+  private static async processTextWithGoogleOcr(text: string, apiKey: string): Promise<string> {
+    try {
+      // Create a simple image with the text to improve OCR processing
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      canvas.width = 800;
+      canvas.height = 600;
+      
+      // White background
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Black text
+      ctx.fillStyle = 'black';
+      ctx.font = '16px Arial';
+      ctx.textAlign = 'right'; // RTL for Hebrew
+      
+      // Split text into lines and draw
+      const lines = text.split(/[\n\r]+/);
+      let y = 50;
+      
+      for (const line of lines.slice(0, 30)) { // Limit lines
+        if (line.trim()) {
+          ctx.fillText(line.trim(), canvas.width - 50, y);
+          y += 25;
+        }
+      }
+      
+      const imageDataUrl = canvas.toDataURL('image/png');
+      
+      // Process with Google Vision API
+      return await this.processImageWithGoogleOcr(imageDataUrl, apiKey);
+      
+    } catch (error) {
+      console.warn('Text processing with Google OCR failed:', error);
+      return text; // Return original text if processing fails
     }
   }
   
@@ -184,33 +291,6 @@ export class GoogleOcrService {
     }
     
     return line;
-  }
-  
-  private static async extractFirstPageAsImage(file: File): Promise<string | null> {
-    try {
-      // Simple fallback: create a basic image representation
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      
-      canvas.width = 800;
-      canvas.height = 1000;
-      
-      // Fill with white background
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      // Add some basic content indication
-      ctx.fillStyle = 'black';
-      ctx.font = '16px Arial';
-      ctx.fillText('PDF Content for OCR', 50, 50);
-      ctx.fillText(`File: ${file.name}`, 50, 80);
-      
-      return canvas.toDataURL('image/png');
-      
-    } catch (error) {
-      console.error('Simple image extraction failed:', error);
-      return null;
-    }
   }
   
   private static async convertPdfToImages(file: File): Promise<string[]> {
