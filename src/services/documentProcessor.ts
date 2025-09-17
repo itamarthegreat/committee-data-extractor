@@ -122,73 +122,124 @@ export class DocumentProcessor {
   
   private async parseDocumentWithTool(file: File): Promise<string> {
     try {
-      // Use PDF.js with better Hebrew text extraction
-      console.log('Loading PDF.js for enhanced text extraction...');
+      console.log('Trying enhanced binary text extraction...');
       
-      const pdfjsLib = await import('pdfjs-dist');
-      
-      // Set worker for PDF.js - match the installed version
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.js`;
-      
+      // Direct binary analysis approach - more reliable than PDF.js with workers
       const arrayBuffer = await file.arrayBuffer();
-      const loadingTask = pdfjsLib.getDocument({
-        data: arrayBuffer,
-        useWorkerFetch: false,
-        isEvalSupported: false
-      });
+      const uint8Array = new Uint8Array(arrayBuffer);
       
-      const pdf = await loadingTask.promise;
-      console.log(`PDF loaded: ${pdf.numPages} pages`);
+      // Strategy 1: Look for readable text using UTF-8 and Windows-1255 encodings
+      const extractedTexts: string[] = [];
       
-      let extractedTexts: string[] = [];
-      const maxPages = Math.min(pdf.numPages, 3); // Process up to 3 pages
+      // Try UTF-8 first
+      try {
+        const decoder = new TextDecoder('utf-8', { fatal: false });
+        let content = decoder.decode(uint8Array);
+        
+        // Extract Hebrew medical terms and data
+        const hebrewPatterns = [
+          /ביטוח\s*לאומי[^]*?(?=\n|\r|$)/gi,
+          /ועדה\s*רפואית[^]*?(?=\n|\r|$)/gi,
+          /שם\s*המבוטח[:\s]*([א-ת\s]+)/gi,
+          /ת\.ז[:\.\s]*(\d{9})/gi,
+          /תאריך[^]*?(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})/gi,
+          /אבחנה[:\s]*([א-ת\s\d\.]{3,50})/gi,
+          /אחוז\s*נכות[:\s]*(\d{1,3}%?)/gi,
+          /סניף[:\s]*([א-ת\s]{3,30})/gi,
+          /משתתפי\s*הועדה[^]*?(?=[א-ת]{3,}|$)/gi
+        ];
+        
+        for (const pattern of hebrewPatterns) {
+          const matches = content.match(pattern) || [];
+          extractedTexts.push(...matches.slice(0, 10));
+        }
+        
+        // Extract structured data patterns
+        const dataPatterns = [
+          /\b\d{9}\b/g, // ID numbers
+          /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}/g, // Dates
+          /\d{1,3}%/g, // Percentages
+          /[א-ת]{2,}/g, // Hebrew words
+        ];
+        
+        for (const pattern of dataPatterns) {
+          const matches = content.match(pattern) || [];
+          extractedTexts.push(...matches.slice(0, 20));
+        }
+        
+      } catch (utfError) {
+        console.warn('UTF-8 decoding failed:', utfError);
+      }
       
-      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
-        try {
-          const page = await pdf.getPage(pageNum);
-          
-          // Get text content
-          const textContent = await page.getTextContent();
-          
-          // Extract text items and preserve Hebrew
-          const pageTexts = textContent.items
-            .filter((item: any) => item.str && item.str.trim().length > 0)
-            .map((item: any) => {
-              let text = item.str.trim();
-              
-              // Clean up text but preserve Hebrew characters
-              text = text
-                .replace(/\s+/g, ' ')
-                .replace(/[^\u05D0-\u05EA\u0590-\u05FF\w\s\d.,;:()\-\/%]/g, ' ')
-                .trim();
-              
-              return text;
-            })
-            .filter(text => text.length > 0);
-          
-          if (pageTexts.length > 0) {
-            const pageText = pageTexts.join(' ');
-            extractedTexts.push(pageText);
-            console.log(`Page ${pageNum} extracted ${pageText.length} characters`);
-            console.log(`Page ${pageNum} sample:`, pageText.substring(0, 200));
+      // Strategy 2: Try Windows-1255 encoding for Hebrew
+      try {
+        // Simulate Windows-1255 decoding for Hebrew text
+        let hebrewContent = '';
+        for (let i = 0; i < Math.min(uint8Array.length, 100000); i++) {
+          const byte = uint8Array[i];
+          if (byte >= 224 && byte <= 250) { // Hebrew range in Windows-1255
+            hebrewContent += String.fromCharCode(0x05D0 + (byte - 224));
+          } else if ((byte >= 32 && byte <= 126) || byte === 32) {
+            hebrewContent += String.fromCharCode(byte);
+          } else {
+            hebrewContent += ' ';
           }
-          
-        } catch (pageError) {
-          console.warn(`Failed to extract text from page ${pageNum}:`, pageError);
+        }
+        
+        // Look for Hebrew medical terms
+        const hebrewTerms = hebrewContent.match(/[א-ת]{3,}/g) || [];
+        extractedTexts.push(...hebrewTerms.slice(0, 30));
+        
+      } catch (hebrewError) {
+        console.warn('Hebrew encoding failed:', hebrewError);
+      }
+      
+      // Strategy 3: Extract raw binary patterns
+      let binaryText = '';
+      for (let i = 0; i < Math.min(uint8Array.length, 200000); i++) {
+        const byte = uint8Array[i];
+        if ((byte >= 32 && byte <= 126) || // ASCII printable
+            (byte >= 0x05D0 && byte <= 0x05EA) || // Hebrew
+            byte === 10 || byte === 13 || byte === 9 || byte === 32) { // Whitespace
+          binaryText += String.fromCharCode(byte);
+        } else if (byte === 0 && binaryText.length > 0) {
+          binaryText += ' ';
         }
       }
       
-      const finalText = extractedTexts.join('\n\n').trim();
+      // Extract meaningful patterns from binary
+      const binaryPatterns = [
+        /\b\d{9}\b/g,
+        /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}/g,
+        /\d{1,3}%/g,
+        /[A-Za-z]{3,}/g,
+        /[א-ת]{2,}/g
+      ];
       
-      if (finalText.length > 30) {
-        console.log(`PDF.js successfully extracted ${finalText.length} characters`);
+      for (const pattern of binaryPatterns) {
+        const matches = binaryText.match(pattern) || [];
+        extractedTexts.push(...matches.slice(0, 15));
+      }
+      
+      // Clean and deduplicate results
+      const uniqueTexts = [...new Set(extractedTexts)]
+        .filter(text => text && text.trim().length > 1)
+        .map(text => text.trim())
+        .slice(0, 100); // Limit results
+      
+      const finalText = uniqueTexts.join(' ').trim();
+      
+      console.log(`Enhanced extraction found ${uniqueTexts.length} text elements`);
+      console.log('Sample extracted text:', finalText.substring(0, 300));
+      
+      if (finalText.length > 50) {
         return finalText;
       } else {
-        throw new Error('PDF.js extraction insufficient');
+        throw new Error('Enhanced extraction insufficient');
       }
       
     } catch (error) {
-      console.error('PDF.js document parser failed:', error);
+      console.error('Enhanced document parser failed:', error);
       throw new Error('Enhanced document parsing failed');
     }
   }
