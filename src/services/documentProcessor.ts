@@ -34,7 +34,7 @@ export class DocumentProcessor {
       try {
         // Try Google OCR first if API key is available
         if (this.googleApiKey) {
-          console.log('Using Google OCR for text extraction...');
+          console.log('Using document parser + Google OCR for text extraction...');
           extractedText = await GoogleOcrService.extractTextFromPdf(file, this.googleApiKey);
           
           if (extractedText && extractedText.length > 30) {

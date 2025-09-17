@@ -3,29 +3,16 @@ export class GoogleOcrService {
   
   static async extractTextFromPdf(file: File, apiKey: string): Promise<string> {
     try {
-      console.log('Starting Google OCR extraction...');
+      console.log('Starting Google OCR extraction with document parsing...');
       
-      // First try to parse the document using direct extraction
       let extractedTexts: string[] = [];
       
+      // Method 1: Try to use document parsing first
       try {
-        console.log('Trying direct PDF text extraction...');
-        const pdfText = await this.extractPdfContentDirectly(file);
+        console.log('Attempting to parse document and extract images...');
         
-        if (pdfText && pdfText.length > 50) {
-          console.log(`Extracted ${pdfText.length} characters directly from PDF`);
-          
-          // Process the extracted text with Google Vision API for better Hebrew handling
-          const processedText = await this.processTextWithGoogleOcr(pdfText, apiKey);
-          return processedText || pdfText;
-        }
-        
-      } catch (directError) {
-        console.warn('Direct PDF text extraction failed:', directError);
-      }
-      
-      // Fallback: Try to convert PDF to images and process with OCR
-      try {
+        // Since we don't have access to document parser in browser,
+        // let's try PDF.js to convert to high-quality images
         const images = await this.convertPdfToImages(file);
         
         if (images.length > 0) {
@@ -43,8 +30,23 @@ export class GoogleOcrService {
             }
           }
         }
+        
       } catch (imageError) {
         console.warn('Image-based OCR failed:', imageError);
+        
+        // Method 2: Try direct text extraction as fallback
+        try {
+          console.log('Trying direct PDF text extraction...');
+          const directText = await this.extractPdfContentDirectly(file);
+          
+          if (directText && directText.length > 50) {
+            console.log(`Extracted ${directText.length} characters directly from PDF`);
+            extractedTexts.push(directText);
+          }
+          
+        } catch (directError) {
+          console.warn('Direct text extraction also failed:', directError);
+        }
       }
       
       const finalText = extractedTexts.join('\n\n').trim();
@@ -61,6 +63,64 @@ export class GoogleOcrService {
     } catch (error) {
       console.error('Google OCR extraction failed:', error);
       throw new Error(`Google OCR failed: ${error.message}`);
+    }
+  }
+  
+  private static async processImageWithGoogleOcr(imageDataUrl: string, apiKey: string): Promise<string> {
+    try {
+      // Convert data URL to base64
+      const base64Image = imageDataUrl.split(',')[1];
+      
+      // Google Cloud Vision API request
+      const requestBody = {
+        requests: [
+          {
+            image: {
+              content: base64Image
+            },
+            features: [
+              {
+                type: 'TEXT_DETECTION',
+                maxResults: 1
+              }
+            ],
+            imageContext: {
+              languageHints: ['he', 'en'] // Hebrew and English
+            }
+          }
+        ]
+      };
+      
+      const response = await fetch(
+        `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody)
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Google Vision API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.responses && data.responses[0] && data.responses[0].textAnnotations) {
+        const fullText = data.responses[0].textAnnotations[0]?.description || '';
+        
+        // Clean and fix RTL text direction issues
+        return this.fixRtlText(fullText);
+      }
+      
+      return '';
+      
+    } catch (error) {
+      console.error('Google Vision API call failed:', error);
+      throw error;
     }
   }
   
@@ -131,104 +191,6 @@ export class GoogleOcrService {
     } catch (error) {
       console.error('Direct PDF text extraction failed:', error);
       throw new Error('Could not extract text directly from PDF');
-    }
-  }
-  
-  private static async processTextWithGoogleOcr(text: string, apiKey: string): Promise<string> {
-    try {
-      // Create a simple image with the text to improve OCR processing
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      
-      canvas.width = 800;
-      canvas.height = 600;
-      
-      // White background
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      // Black text
-      ctx.fillStyle = 'black';
-      ctx.font = '16px Arial';
-      ctx.textAlign = 'right'; // RTL for Hebrew
-      
-      // Split text into lines and draw
-      const lines = text.split(/[\n\r]+/);
-      let y = 50;
-      
-      for (const line of lines.slice(0, 30)) { // Limit lines
-        if (line.trim()) {
-          ctx.fillText(line.trim(), canvas.width - 50, y);
-          y += 25;
-        }
-      }
-      
-      const imageDataUrl = canvas.toDataURL('image/png');
-      
-      // Process with Google Vision API
-      return await this.processImageWithGoogleOcr(imageDataUrl, apiKey);
-      
-    } catch (error) {
-      console.warn('Text processing with Google OCR failed:', error);
-      return text; // Return original text if processing fails
-    }
-  }
-  
-  private static async processImageWithGoogleOcr(imageDataUrl: string, apiKey: string): Promise<string> {
-    try {
-      // Convert data URL to base64
-      const base64Image = imageDataUrl.split(',')[1];
-      
-      // Google Cloud Vision API request
-      const requestBody = {
-        requests: [
-          {
-            image: {
-              content: base64Image
-            },
-            features: [
-              {
-                type: 'TEXT_DETECTION',
-                maxResults: 1
-              }
-            ],
-            imageContext: {
-              languageHints: ['he', 'en'] // Hebrew and English
-            }
-          }
-        ]
-      };
-      
-      const response = await fetch(
-        `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody)
-        }
-      );
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`Google Vision API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.responses && data.responses[0] && data.responses[0].textAnnotations) {
-        const fullText = data.responses[0].textAnnotations[0]?.description || '';
-        
-        // Clean and fix RTL text direction issues
-        return this.fixRtlText(fullText);
-      }
-      
-      return '';
-      
-    } catch (error) {
-      console.error('Google Vision API call failed:', error);
-      throw error;
     }
   }
   
@@ -327,7 +289,8 @@ export class GoogleOcrService {
             try {
               const page = await pdf.getPage(pageNum);
               
-              const scale = 2.0;
+              // Create very high resolution for better OCR
+              const scale = 4.0; // Higher scale for better OCR results
               const viewport = page.getViewport({ scale });
               
               const canvas = document.createElement('canvas');
@@ -335,6 +298,8 @@ export class GoogleOcrService {
               canvas.height = viewport.height;
               canvas.width = viewport.width;
               
+              // Set canvas to high quality
+              context.imageSmoothingEnabled = false;
               context.imageSmoothingEnabled = false;
               
               const renderContext = {
