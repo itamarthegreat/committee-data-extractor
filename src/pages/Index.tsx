@@ -69,9 +69,15 @@ const Index = () => {
         "משתתפי הועדה": null,
         "תקופה": null,
         "אבחנה": null,
-        decisionTable: [],
-        disabilityWeightTable: [],
-        processingStatus: 'processing' as const,
+        "סעיף ליקוי": null,
+        "אחוז הנכות הנובע מהפגיעה": null,
+        "הערות": null,
+        "מתאריך": null,
+        "עד תאריך": null,
+        "מידת הנכות": null,
+        "אחוז הנכות משוקלל": null,
+        "שקלול לפטור ממס": null,
+        processingStatus: 'processing' as const
       }));
       
       setResults(processingResults);
