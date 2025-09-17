@@ -122,36 +122,74 @@ export class DocumentProcessor {
   
   private async parseDocumentWithTool(file: File): Promise<string> {
     try {
-      // Save file temporarily and use document parser
-      const formData = new FormData();
-      formData.append('file', file);
+      // Use PDF.js with better Hebrew text extraction
+      console.log('Loading PDF.js for enhanced text extraction...');
       
-      // Create a temporary file path
-      const tempPath = `temp-${Date.now()}-${file.name}`;
+      const pdfjsLib = await import('pdfjs-dist');
       
-      // We'll use the lovable document parser by making it available for parsing
-      // This is a more reliable approach than manual PDF.js handling
+      // Set worker for PDF.js
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
       
-      const fileReader = new FileReader();
-      return new Promise((resolve, reject) => {
-        fileReader.onload = async (e) => {
-          try {
-            const arrayBuffer = e.target?.result as ArrayBuffer;
-            
-            // Try to extract text content using a more reliable method
-            const text = await this.extractTextFromArrayBuffer(arrayBuffer, file.name);
-            resolve(text);
-          } catch (error) {
-            reject(error);
-          }
-        };
-        fileReader.onerror = () => reject(new Error('Failed to read file'));
-        fileReader.readAsArrayBuffer(file);
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({
+        data: arrayBuffer,
+        useWorkerFetch: false,
+        isEvalSupported: false
       });
       
+      const pdf = await loadingTask.promise;
+      console.log(`PDF loaded: ${pdf.numPages} pages`);
+      
+      let extractedTexts: string[] = [];
+      const maxPages = Math.min(pdf.numPages, 3); // Process up to 3 pages
+      
+      for (let pageNum = 1; pageNum <= maxPages; pageNum++) {
+        try {
+          const page = await pdf.getPage(pageNum);
+          
+          // Get text content
+          const textContent = await page.getTextContent();
+          
+          // Extract text items and preserve Hebrew
+          const pageTexts = textContent.items
+            .filter((item: any) => item.str && item.str.trim().length > 0)
+            .map((item: any) => {
+              let text = item.str.trim();
+              
+              // Clean up text but preserve Hebrew characters
+              text = text
+                .replace(/\s+/g, ' ')
+                .replace(/[^\u05D0-\u05EA\u0590-\u05FF\w\s\d.,;:()\-\/%]/g, ' ')
+                .trim();
+              
+              return text;
+            })
+            .filter(text => text.length > 0);
+          
+          if (pageTexts.length > 0) {
+            const pageText = pageTexts.join(' ');
+            extractedTexts.push(pageText);
+            console.log(`Page ${pageNum} extracted ${pageText.length} characters`);
+            console.log(`Page ${pageNum} sample:`, pageText.substring(0, 200));
+          }
+          
+        } catch (pageError) {
+          console.warn(`Failed to extract text from page ${pageNum}:`, pageError);
+        }
+      }
+      
+      const finalText = extractedTexts.join('\n\n').trim();
+      
+      if (finalText.length > 30) {
+        console.log(`PDF.js successfully extracted ${finalText.length} characters`);
+        return finalText;
+      } else {
+        throw new Error('PDF.js extraction insufficient');
+      }
+      
     } catch (error) {
-      console.error('Document parser failed:', error);
-      throw new Error('Document parsing failed');
+      console.error('PDF.js document parser failed:', error);
+      throw new Error('Enhanced document parsing failed');
     }
   }
   
