@@ -259,10 +259,10 @@ export class GoogleOcrService {
     try {
       const pdfjsLib = await import('pdfjs-dist');
       
-      // Try different worker configurations
+      // Try different worker configurations  
       const workerUrls = [
-        `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`,
-        `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`
+        `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.9.155/pdf.worker.min.js`,
+        `https://unpkg.com/pdfjs-dist@4.9.155/build/pdf.worker.min.js`
       ];
       
       let workerLoaded = false;
