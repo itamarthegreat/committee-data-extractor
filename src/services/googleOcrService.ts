@@ -174,8 +174,8 @@ export class GoogleOcrService {
       // Use a lighter approach - try to use PDF.js if available
       const pdfjsLib = await import('pdfjs-dist');
       
-      // Set a working worker source
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      // Set worker source to match the package version
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.worker.min.js';
       
       const arrayBuffer = await file.arrayBuffer();
       const loadingTask = pdfjsLib.getDocument({ 
