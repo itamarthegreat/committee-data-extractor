@@ -193,29 +193,9 @@ ${text}
       cleanContent = this.fixJsonFormatting(cleanContent);
       console.log('Cleaned content for parsing:', cleanContent);
       
-      // Try parsing directly first, if fails use simple fallback
-      let extractedData: any;
-      try {
-        extractedData = JSON.parse(cleanContent);
-        console.log('Successfully parsed JSON:', extractedData);
-      } catch (jsonError) {
-        // Simple regex fallback for key fields
-        const result: Partial<ProcessedDocument> = {};
-        const nameMatch = content.match(/"שם המבוטח":\s*"([^"]+)"/);
-        const idMatch = content.match(/"ת\.ז:":\s*"([^"]+)"/);
-        const branchMatch = content.match(/"סניף הועדה":\s*"([^"]+)"/);
-        const diagnosisMatch = content.match(/"אבחנה":\s*"([^"]+)"/);
-        const percentMatch = content.match(/"אחוז הנכות הנובע מהפגיעה":\s*"([^"]+)"/);
-        
-        if (nameMatch) result["שם המבוטח"] = nameMatch[1];
-        if (idMatch) result["ת.ז:"] = idMatch[1];
-        if (branchMatch) result["סניף הוועדה"] = branchMatch[1];
-        if (diagnosisMatch) result["אבחנה"] = diagnosisMatch[1];
-        if (percentMatch) result["אחוז הנכות הנובע מהפגיעה"] = percentMatch[1];
-        
-        console.log('Using regex fallback extraction:', result);
-        return result;
-      }
+      // Parse the JSON
+      const extractedData = JSON.parse(cleanContent);
+      console.log('Successfully parsed JSON:', extractedData);
       
       // Helper function to convert values to strings
       const convertToString = (value: any): string => {
@@ -242,83 +222,58 @@ ${text}
       console.log('Extracted data keys:', Object.keys(extractedData));
       console.log('Full extracted data:', extractedData);
       
-      // Map all the fields - check if field exists in response, not if it's truthy
-      if (extractedData.hasOwnProperty("סוג ועדה")) {
-        result["סוג ועדה"] = convertToString(extractedData["סוג ועדה"]);
-        console.log('Set סוג ועדה:', result["סוג ועדה"]);
-      }
-      if (extractedData.hasOwnProperty("שם טופס")) {
-        result["שם טופס"] = convertToString(extractedData["שם טופס"]);
-        console.log('Set שם טופס:', result["שם טופס"]);
-      }
-      if (extractedData.hasOwnProperty("סניף הוועדה")) {
-        result["סניף הוועדה"] = convertToString(extractedData["סניף הוועדה"]);
-        console.log('Set סניף הוועדה:', result["סניף הוועדה"]);
-      }
-      if (extractedData.hasOwnProperty("שם המבוטח")) {
-        result["שם המבוטח"] = convertToString(extractedData["שם המבוטח"]);
-        console.log('Set שם המבוטח:', result["שם המבוטח"]);
-      }
-      if (extractedData.hasOwnProperty("ת.ז:")) {
-        result["ת.ז:"] = convertToString(extractedData["ת.ז:"]);
-        console.log('Set ת.ז.:', result["ת.ז:"]);
-      }
-      if (extractedData.hasOwnProperty("תאריך פגיעה(רק באיבה,נכות מעבודה)")) {
-        result["תאריך פגיעה(רק באיבה,נכות מעבודה)"] = convertToString(extractedData["תאריך פגיעה(רק באיבה,נכות מעבודה)"]);
-        console.log('Set תאריך פגיעה:', result["תאריך פגיעה(רק באיבה,נכות מעבודה)"]);
-      }
-      if (extractedData.hasOwnProperty("משתתפי הועדה")) {
-        result["משתתפי הועדה"] = convertToString(extractedData["משתתפי הועדה"]);
-        console.log('Set משתתפי הועדה:', result["משתתפי הועדה"]);
-      }
-      if (extractedData.hasOwnProperty("תקופה")) {
-        result["תקופה"] = convertToString(extractedData["תקופה"]);
-        console.log('Set תקופה:', result["תקופה"]);
-      }
-      if (extractedData.hasOwnProperty("אבחנה")) {
-        result["אבחנה"] = convertToString(extractedData["אבחנה"]);
-        console.log('Set אבחנה:', result["אבחנה"]);
-      }
-      if (extractedData.hasOwnProperty("סעיף ליקוי")) {
-        result["סעיף ליקוי"] = convertToString(extractedData["סעיף ליקוי"]);
-        console.log('Set סעיף ליקוי:', result["סעיף ליקוי"]);
-      }
-      if (extractedData.hasOwnProperty("אחוז הנכות הנובע מהפגיעה")) {
-        result["אחוז הנכות הנובע מהפגיעה"] = convertToString(extractedData["אחוז הנכות הנובע מהפגיעה"]);
-        console.log('Set אחוז הנכות הנובע מהפגיעה:', result["אחוז הנכות הנובע מהפגיעה"]);
-      }
-      if (extractedData.hasOwnProperty("הערות")) {
-        result["הערות"] = convertToString(extractedData["הערות"]);
-        console.log('Set הערות:', result["הערות"]);
-      }
-      if (extractedData.hasOwnProperty("מתאריך")) {
-        result["מתאריך"] = convertToString(extractedData["מתאריך"]);
-        console.log('Set מתאריך:', result["מתאריך"]);
-      }
-      if (extractedData.hasOwnProperty("עד תאריך")) {
-        result["עד תאריך"] = convertToString(extractedData["עד תאריך"]);
-        console.log('Set עד תאריך:', result["עד תאריך"]);
-      }
-      if (extractedData.hasOwnProperty("מידת הנכות")) {
-        result["מידת הנכות"] = convertToString(extractedData["מידת הנכות"]);
-        console.log('Set מידת הנכות:', result["מידת הנכות"]);
-      }
-      if (extractedData.hasOwnProperty("אחוז הנכות משוקלל")) {
-        result["אחוז הנכות משוקלל"] = convertToString(extractedData["אחוז הנכות משוקלל"]);
-        console.log('Set אחוז הנכות משוקלל:', result["אחוז הנכות משוקלל"]);
-      }
-      if (extractedData.hasOwnProperty("שקלול לפטור ממס")) {
-        result["שקלול לפטור ממס"] = convertToString(extractedData["שקלול לפטור ממס"]);
-        console.log('Set שקלול לפטור ממס:', result["שקלול לפטור ממס"]);
-      }
+      // Process all fields from the extracted data
+      const fieldMapping = {
+        "סוג ועדה": "סוג ועדה",
+        "שם טופס": "שם טופס", 
+        "סניף הועדה": "סניף הוועדה",
+        "שם המבוטח": "שם המבוטח",
+        "ת.ז:": "ת.ז:",
+        "תאריך פגיעה(רק באיבה,נכות מעבודה)": "תאריך פגיעה(רק באיבה,נכות מעבודה)",
+        "משתתפי הועדה": "משתתפי הועדה",
+        "תקופה": "תקופה", 
+        "אבחנה": "אבחנה",
+        "סעיף ליקוי": "סעיף ליקוי",
+        "אחוז הנכות הנובע מהפגיעה": "אחוז הנכות הנובע מהפגיעה",
+        "הערות": "הערות",
+        "מתאריך": "מתאריך",
+        "עד תאריך": "עד תאריך", 
+        "מידת הנכות": "מידת הנכות",
+        "אחוז הנכות משוקלל": "אחוז הנכות משוקלל",
+        "שקלול לפטור ממס": "שקלול לפטור ממס"
+      };
+      
+      Object.entries(fieldMapping).forEach(([key, field]) => {
+        if (extractedData.hasOwnProperty(key)) {
+          const value = convertToString(extractedData[key]);
+          result[field] = value;
+          console.log(`Set ${field}:`, value);
+        }
+      });
       
       console.log('Final parsed result:', result);
       return result;
       
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
-      console.error('Problematic content:', content);
-      throw new Error('תגובה לא תקינה מ-OpenAI');
+      console.error('Falling back to regex extraction');
+      
+      // Simple regex fallback for key fields
+      const result: Partial<ProcessedDocument> = {};
+      const nameMatch = content.match(/"שם המבוטח":\s*"([^"]+)"/);
+      const idMatch = content.match(/"ת\.ז:":\s*"([^"]+)"/);
+      const branchMatch = content.match(/"סניף הועדה":\s*"([^"]+)"/);
+      const diagnosisMatch = content.match(/"אבחנה":\s*"([^"]+)"/);
+      const percentMatch = content.match(/"אחוז הנכות הנובע מהפגיעה":\s*"([^"]+)"/);
+      
+      if (nameMatch) result["שם המבוטח"] = nameMatch[1];
+      if (idMatch) result["ת.ז:"] = idMatch[1];
+      if (branchMatch) result["סניף הועדה"] = branchMatch[1];
+      if (diagnosisMatch) result["אבחנה"] = diagnosisMatch[1];
+      if (percentMatch) result["אחוז הנכות הנובע מהפגיעה"] = percentMatch[1];
+      
+      console.log('Using regex fallback extraction:', result);
+      return result;
     }
   }
 
