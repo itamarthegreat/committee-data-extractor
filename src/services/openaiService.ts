@@ -254,9 +254,7 @@ ${text}
       if (extractedData["אחוז הנכות משוקלל"]) result["אחוז הנכות משוקלל"] = convertToString(extractedData["אחוז הנכות משוקלל"]);
       if (extractedData["שקלול לפטור ממס"]) result["שקלול לפטור ממס"] = convertToString(extractedData["שקלול לפטור ממס"]);
       
-  }
-
-  private processExtractedData(extractedData: any): Partial<ProcessedDocument> {
+      return result;
       
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
