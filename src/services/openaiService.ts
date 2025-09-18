@@ -235,25 +235,80 @@ ${text}
       
       const result: Partial<ProcessedDocument> = {};
       
-      // Map all the fields - check if field exists in response, not if it's truthy
-      if (extractedData.hasOwnProperty("סוג ועדה")) result["סוג ועדה"] = convertToString(extractedData["סוג ועדה"]);
-      if (extractedData.hasOwnProperty("שם טופס")) result["שם טופס"] = convertToString(extractedData["שם טופס"]);
-      if (extractedData.hasOwnProperty("סניף הוועדה")) result["סניף הוועדה"] = convertToString(extractedData["סניף הוועדה"]);
-      if (extractedData.hasOwnProperty("שם המבוטח")) result["שם המבוטח"] = convertToString(extractedData["שם המבוטח"]);
-      if (extractedData.hasOwnProperty("ת.ז:")) result["ת.ז:"] = convertToString(extractedData["ת.ז:"]);
-      if (extractedData.hasOwnProperty("תאריך פגיעה(רק באיבה,נכות מעבודה)")) result["תאריך פגיעה(רק באיבה,נכות מעבודה)"] = convertToString(extractedData["תאריך פגיעה(רק באיבה,נכות מעבודה)"]);
-      if (extractedData.hasOwnProperty("משתתפי הועדה")) result["משתתפי הועדה"] = convertToString(extractedData["משתתפי הועדה"]);
-      if (extractedData.hasOwnProperty("תקופה")) result["תקופה"] = convertToString(extractedData["תקופה"]);
-      if (extractedData.hasOwnProperty("אבחנה")) result["אבחנה"] = convertToString(extractedData["אבחנה"]);
-      if (extractedData.hasOwnProperty("סעיף ליקוי")) result["סעיף ליקוי"] = convertToString(extractedData["סעיף ליקוי"]);
-      if (extractedData.hasOwnProperty("אחוז הנכות הנובע מהפגיעה")) result["אחוז הנכות הנובע מהפגיעה"] = convertToString(extractedData["אחוז הנכות הנובע מהפגיעה"]);
-      if (extractedData.hasOwnProperty("הערות")) result["הערות"] = convertToString(extractedData["הערות"]);
-      if (extractedData.hasOwnProperty("מתאריך")) result["מתאריך"] = convertToString(extractedData["מתאריך"]);
-      if (extractedData.hasOwnProperty("עד תאריך")) result["עד תאריך"] = convertToString(extractedData["עד תאריך"]);
-      if (extractedData.hasOwnProperty("מידת הנכות")) result["מידת הנכות"] = convertToString(extractedData["מידת הנכות"]);
-      if (extractedData.hasOwnProperty("אחוז הנכות משוקלל")) result["אחוז הנכות משוקלל"] = convertToString(extractedData["אחוז הנכות משוקלל"]);
-      if (extractedData.hasOwnProperty("שקלול לפטור ממס")) result["שקלול לפטור ממס"] = convertToString(extractedData["שקלול לפטור ממס"]);
+      console.log('Extracted data keys:', Object.keys(extractedData));
+      console.log('Full extracted data:', extractedData);
       
+      // Map all the fields - check if field exists in response, not if it's truthy
+      if (extractedData.hasOwnProperty("סוג ועדה")) {
+        result["סוג ועדה"] = convertToString(extractedData["סוג ועדה"]);
+        console.log('Set סוג ועדה:', result["סוג ועדה"]);
+      }
+      if (extractedData.hasOwnProperty("שם טופס")) {
+        result["שם טופס"] = convertToString(extractedData["שם טופס"]);
+        console.log('Set שם טופס:', result["שם טופס"]);
+      }
+      if (extractedData.hasOwnProperty("סניף הוועדה")) {
+        result["סניף הוועדה"] = convertToString(extractedData["סניף הוועדה"]);
+        console.log('Set סניף הוועדה:', result["סניף הוועדה"]);
+      }
+      if (extractedData.hasOwnProperty("שם המבוטח")) {
+        result["שם המבוטח"] = convertToString(extractedData["שם המבוטח"]);
+        console.log('Set שם המבוטח:', result["שם המבוטח"]);
+      }
+      if (extractedData.hasOwnProperty("ת.ז:")) {
+        result["ת.ז:"] = convertToString(extractedData["ת.ז:"]);
+        console.log('Set ת.ז.:', result["ת.ז:"]);
+      }
+      if (extractedData.hasOwnProperty("תאריך פגיעה(רק באיבה,נכות מעבודה)")) {
+        result["תאריך פגיעה(רק באיבה,נכות מעבודה)"] = convertToString(extractedData["תאריך פגיעה(רק באיבה,נכות מעבודה)"]);
+        console.log('Set תאריך פגיעה:', result["תאריך פגיעה(רק באיבה,נכות מעבודה)"]);
+      }
+      if (extractedData.hasOwnProperty("משתתפי הועדה")) {
+        result["משתתפי הועדה"] = convertToString(extractedData["משתתפי הועדה"]);
+        console.log('Set משתתפי הועדה:', result["משתתפי הועדה"]);
+      }
+      if (extractedData.hasOwnProperty("תקופה")) {
+        result["תקופה"] = convertToString(extractedData["תקופה"]);
+        console.log('Set תקופה:', result["תקופה"]);
+      }
+      if (extractedData.hasOwnProperty("אבחנה")) {
+        result["אבחנה"] = convertToString(extractedData["אבחנה"]);
+        console.log('Set אבחנה:', result["אבחנה"]);
+      }
+      if (extractedData.hasOwnProperty("סעיף ליקוי")) {
+        result["סעיף ליקוי"] = convertToString(extractedData["סעיף ליקוי"]);
+        console.log('Set סעיף ליקוי:', result["סעיף ליקוי"]);
+      }
+      if (extractedData.hasOwnProperty("אחוז הנכות הנובע מהפגיעה")) {
+        result["אחוז הנכות הנובע מהפגיעה"] = convertToString(extractedData["אחוז הנכות הנובע מהפגיעה"]);
+        console.log('Set אחוז הנכות הנובע מהפגיעה:', result["אחוז הנכות הנובע מהפגיעה"]);
+      }
+      if (extractedData.hasOwnProperty("הערות")) {
+        result["הערות"] = convertToString(extractedData["הערות"]);
+        console.log('Set הערות:', result["הערות"]);
+      }
+      if (extractedData.hasOwnProperty("מתאריך")) {
+        result["מתאריך"] = convertToString(extractedData["מתאריך"]);
+        console.log('Set מתאריך:', result["מתאריך"]);
+      }
+      if (extractedData.hasOwnProperty("עד תאריך")) {
+        result["עד תאריך"] = convertToString(extractedData["עד תאריך"]);
+        console.log('Set עד תאריך:', result["עד תאריך"]);
+      }
+      if (extractedData.hasOwnProperty("מידת הנכות")) {
+        result["מידת הנכות"] = convertToString(extractedData["מידת הנכות"]);
+        console.log('Set מידת הנכות:', result["מידת הנכות"]);
+      }
+      if (extractedData.hasOwnProperty("אחוז הנכות משוקלל")) {
+        result["אחוז הנכות משוקלל"] = convertToString(extractedData["אחוז הנכות משוקלל"]);
+        console.log('Set אחוז הנכות משוקלל:', result["אחוז הנכות משוקלל"]);
+      }
+      if (extractedData.hasOwnProperty("שקלול לפטור ממס")) {
+        result["שקלול לפטור ממס"] = convertToString(extractedData["שקלול לפטור ממס"]);
+        console.log('Set שקלול לפטור ממס:', result["שקלול לפטור ממס"]);
+      }
+      
+      console.log('Final parsed result:', result);
       return result;
       
     } catch (parseError) {
