@@ -235,24 +235,24 @@ ${text}
       
       const result: Partial<ProcessedDocument> = {};
       
-      // Map all the fields
-      if (extractedData["סוג ועדה"]) result["סוג ועדה"] = convertToString(extractedData["סוג ועדה"]);
-      if (extractedData["שם טופס"]) result["שם טופס"] = convertToString(extractedData["שם טופס"]);
-      if (extractedData["סניף הוועדה"]) result["סניף הוועדה"] = convertToString(extractedData["סניף הוועדה"]);
-      if (extractedData["שם המבוטח"]) result["שם המבוטח"] = convertToString(extractedData["שם המבוטח"]);
-      if (extractedData["ת.ז:"]) result["ת.ז:"] = convertToString(extractedData["ת.ז:"]);
-      if (extractedData["תאריך פגיעה(רק באיבה,נכות מעבודה)"]) result["תאריך פגיעה(רק באיבה,נכות מעבודה)"] = convertToString(extractedData["תאריך פגיעה(רק באיבה,נכות מעבודה)"]);
-      if (extractedData["משתתפי הועדה"]) result["משתתפי הועדה"] = convertToString(extractedData["משתתפי הועדה"]);
-      if (extractedData["תקופה"]) result["תקופה"] = convertToString(extractedData["תקופה"]);
-      if (extractedData["אבחנה"]) result["אבחנה"] = convertToString(extractedData["אבחנה"]);
-      if (extractedData["סעיף ליקוי"]) result["סעיף ליקוי"] = convertToString(extractedData["סעיף ליקוי"]);
-      if (extractedData["אחוז הנכות הנובע מהפגיעה"]) result["אחוז הנכות הנובע מהפגיעה"] = convertToString(extractedData["אחוז הנכות הנובע מהפגיעה"]);
-      if (extractedData["הערות"]) result["הערות"] = convertToString(extractedData["הערות"]);
-      if (extractedData["מתאריך"]) result["מתאריך"] = convertToString(extractedData["מתאריך"]);
-      if (extractedData["עד תאריך"]) result["עד תאריך"] = convertToString(extractedData["עד תאריך"]);
-      if (extractedData["מידת הנכות"]) result["מידת הנכות"] = convertToString(extractedData["מידת הנכות"]);
-      if (extractedData["אחוז הנכות משוקלל"]) result["אחוז הנכות משוקלל"] = convertToString(extractedData["אחוז הנכות משוקלל"]);
-      if (extractedData["שקלול לפטור ממס"]) result["שקלול לפטור ממס"] = convertToString(extractedData["שקלול לפטור ממס"]);
+      // Map all the fields - check if field exists in response, not if it's truthy
+      if (extractedData.hasOwnProperty("סוג ועדה")) result["סוג ועדה"] = convertToString(extractedData["סוג ועדה"]);
+      if (extractedData.hasOwnProperty("שם טופס")) result["שם טופס"] = convertToString(extractedData["שם טופס"]);
+      if (extractedData.hasOwnProperty("סניף הוועדה")) result["סניף הוועדה"] = convertToString(extractedData["סניף הוועדה"]);
+      if (extractedData.hasOwnProperty("שם המבוטח")) result["שם המבוטח"] = convertToString(extractedData["שם המבוטח"]);
+      if (extractedData.hasOwnProperty("ת.ז:")) result["ת.ז:"] = convertToString(extractedData["ת.ז:"]);
+      if (extractedData.hasOwnProperty("תאריך פגיעה(רק באיבה,נכות מעבודה)")) result["תאריך פגיעה(רק באיבה,נכות מעבודה)"] = convertToString(extractedData["תאריך פגיעה(רק באיבה,נכות מעבודה)"]);
+      if (extractedData.hasOwnProperty("משתתפי הועדה")) result["משתתפי הועדה"] = convertToString(extractedData["משתתפי הועדה"]);
+      if (extractedData.hasOwnProperty("תקופה")) result["תקופה"] = convertToString(extractedData["תקופה"]);
+      if (extractedData.hasOwnProperty("אבחנה")) result["אבחנה"] = convertToString(extractedData["אבחנה"]);
+      if (extractedData.hasOwnProperty("סעיף ליקוי")) result["סעיף ליקוי"] = convertToString(extractedData["סעיף ליקוי"]);
+      if (extractedData.hasOwnProperty("אחוז הנכות הנובע מהפגיעה")) result["אחוז הנכות הנובע מהפגיעה"] = convertToString(extractedData["אחוז הנכות הנובע מהפגיעה"]);
+      if (extractedData.hasOwnProperty("הערות")) result["הערות"] = convertToString(extractedData["הערות"]);
+      if (extractedData.hasOwnProperty("מתאריך")) result["מתאריך"] = convertToString(extractedData["מתאריך"]);
+      if (extractedData.hasOwnProperty("עד תאריך")) result["עד תאריך"] = convertToString(extractedData["עד תאריך"]);
+      if (extractedData.hasOwnProperty("מידת הנכות")) result["מידת הנכות"] = convertToString(extractedData["מידת הנכות"]);
+      if (extractedData.hasOwnProperty("אחוז הנכות משוקלל")) result["אחוז הנכות משוקלל"] = convertToString(extractedData["אחוז הנכות משוקלל"]);
+      if (extractedData.hasOwnProperty("שקלול לפטור ממס")) result["שקלול לפטור ממס"] = convertToString(extractedData["שקלול לפטור ממס"]);
       
       return result;
       
