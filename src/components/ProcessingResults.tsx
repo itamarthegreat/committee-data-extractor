@@ -13,6 +13,14 @@ interface ProcessingResultsProps {
 }
 
 const ProcessingResults = ({ results, isProcessing, filesCount }: ProcessingResultsProps) => {
+  
+  // Debug logging
+  console.log('ProcessingResults received results:', results);
+  if (results.length > 0) {
+    console.log('First result keys:', Object.keys(results[0]));
+    console.log('First result data:', results[0]);
+  }
+  
   // Show placeholder when no documents processed yet
   if (results.length === 0 && !isProcessing) {
     return (

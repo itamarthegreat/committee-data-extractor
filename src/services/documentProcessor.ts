@@ -91,11 +91,19 @@ export class DocumentProcessor {
       // Process with OpenAI
       const extractedData = await this.openaiService.processDocumentText(extractedText, file.name);
       
-      return {
+      console.log('Data returned from OpenAI service:', extractedData);
+      console.log('Extracted data keys:', Object.keys(extractedData));
+      
+      const finalDocument = {
         fileName: file.name,
         processingStatus: 'completed',
         ...extractedData
       } as ProcessedDocument;
+      
+      console.log('Final document before return:', finalDocument);
+      console.log('Final document keys:', Object.keys(finalDocument));
+      
+      return finalDocument;
       
     } catch (error) {
       console.error(`Error processing file ${file.name}:`, error);
