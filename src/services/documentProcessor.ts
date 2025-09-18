@@ -1,7 +1,10 @@
 import { ProcessedDocument } from '@/types/document';
 import { OpenAIService } from './openaiService';
 import { GoogleOcrService } from './googleOcrService';
-import { getDocument } from 'pdfjs-dist';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+
+// Set up PDF.js worker using Mozilla CDN (reliable fallback)
+GlobalWorkerOptions.workerSrc = 'https://mozilla.github.io/pdf.js/build/pdf.worker.mjs';
 
 export class DocumentProcessor {
   private openaiService: OpenAIService;
