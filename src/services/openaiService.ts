@@ -190,7 +190,28 @@ ${text}
       // Fix common JSON formatting issues  
       cleanContent = this.fixJsonFormatting(cleanContent);
       
-      const extractedData = JSON.parse(cleanContent);
+      // Try parsing directly first, if fails use simple fallback
+      let extractedData: any;
+      try {
+        extractedData = JSON.parse(cleanContent);
+      } catch (jsonError) {
+        // Simple regex fallback for key fields
+        const result: Partial<ProcessedDocument> = {};
+        const nameMatch = content.match(/"שם המבוטח":\s*"([^"]+)"/);
+        const idMatch = content.match(/"ת\.ז:":\s*"([^"]+)"/);
+        const branchMatch = content.match(/"סניף הועדה":\s*"([^"]+)"/);
+        const diagnosisMatch = content.match(/"אבחנה":\s*"([^"]+)"/);
+        const percentMatch = content.match(/"אחוז הנכות הנובע מהפגיעה":\s*"([^"]+)"/);
+        
+        if (nameMatch) result["שם המבוטח"] = nameMatch[1];
+        if (idMatch) result["ת.ז:"] = idMatch[1];
+        if (branchMatch) result["סניף הוועדה"] = branchMatch[1];
+        if (diagnosisMatch) result["אבחנה"] = diagnosisMatch[1];
+        if (percentMatch) result["אחוז הנכות הנובע מהפגיעה"] = percentMatch[1];
+        
+        console.log('Using regex fallback extraction:', result);
+        return result;
+      }
       
       // Helper function to convert values to strings
       const convertToString = (value: any): string | null => {
@@ -233,7 +254,9 @@ ${text}
       if (extractedData["אחוז הנכות משוקלל"]) result["אחוז הנכות משוקלל"] = convertToString(extractedData["אחוז הנכות משוקלל"]);
       if (extractedData["שקלול לפטור ממס"]) result["שקלול לפטור ממס"] = convertToString(extractedData["שקלול לפטור ממס"]);
       
-      return result;
+  }
+
+  private processExtractedData(extractedData: any): Partial<ProcessedDocument> {
       
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
