@@ -256,45 +256,105 @@ ${text}
       
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
-      console.error('Falling back to regex extraction');
+      console.error('Failed content:', content);
+      console.error('Falling back to comprehensive regex extraction');
       
-      // Simple regex fallback for key fields
+      // Comprehensive regex fallback for ALL fields
       const result: Partial<ProcessedDocument> = {};
-      const nameMatch = content.match(/"שם המבוטח":\s*"([^"]+)"/);
-      const idMatch = content.match(/"ת\.ז:":\s*"([^"]+)"/);
-      const branchMatch = content.match(/"סניף הוועדה":\s*"([^"]+)"/);
-      const diagnosisMatch = content.match(/"אבחנה":\s*"([^"]+)"/);
-      const percentMatch = content.match(/"אחוז הנכות הנובע מהפגיעה":\s*"([^"]+)"/);
       
-      if (nameMatch) result["שם המבוטח"] = nameMatch[1];
-      if (idMatch) result["ת.ז:"] = idMatch[1];
-      if (branchMatch) result["סניף הוועדה"] = branchMatch[1];
-      if (diagnosisMatch) result["אבחנה"] = diagnosisMatch[1];
-      if (percentMatch) result["אחוז הנכות הנובע מהפגיעה"] = percentMatch[1];
+      // Helper function to extract field value
+      const extractField = (pattern: string, fieldName: string) => {
+        const match = content.match(new RegExp(`"${pattern}":\\s*"([^"]+)"`, 'i'));
+        if (match) {
+          result[fieldName] = match[1];
+          console.log(`Regex extracted ${fieldName}:`, match[1]);
+        }
+      };
       
-      console.log('Using regex fallback extraction:', result);
+      // Extract all fields using regex
+      extractField('סוג ועדה', 'סוג ועדה');
+      extractField('שם טופס', 'שם טופס');
+      extractField('סניף הוועדה', 'סניף הוועדה');
+      extractField('שם המבוטח', 'שם המבוטח');
+      extractField('ת\\.ז:', 'ת.ز:');
+      extractField('תאריך פגיעה\\(רק באיבה,נכות מעבודה\\)', 'תאריך פגיעה(רק באיבה,נכות מעבודה)');
+      extractField('תקופה', 'תקופה');
+      extractField('אבחנה', 'אבחנה');
+      extractField('סעיף ליקוי', 'סעיף ליקוי');
+      extractField('אחוז הנכות הנובע מהפגיעה', 'אחוז הנכות הנובע מהפגיעה');
+      extractField('הערות', 'הערות');
+      extractField('מתאריך', 'מתאריך');
+      extractField('עד תאריך', 'עד תאריך');
+      extractField('מידת הנכות', 'מידת הנכות');
+      extractField('אחוז הנכות משוקלל', 'אחוז הנכות משוקלל');
+      extractField('שקלול לפטור ממס', 'שקלול לפטור ממס');
+      
+      // Special handling for משתתפי הועדה (array format)
+      const committeeMembersMatch = content.match(/"משתתפי הועדה":\s*\[(.*?)\]/s);
+      if (committeeMembersMatch) {
+        try {
+          const membersArray = JSON.parse(`[${committeeMembersMatch[1]}]`);
+          result["משתתפי הועדה"] = membersArray.map(member => 
+            typeof member === 'object' && member.שם && member.תפקיד 
+              ? `${member.שם} (${member.תפקיד})`
+              : String(member)
+          ).join(', ');
+        } catch {
+          // Fallback to simple text extraction
+          result["משתתפי הועדה"] = committeeMembersMatch[1].replace(/[{},"]/g, '').trim();
+        }
+      }
+      
+      console.log('Using comprehensive regex fallback extraction:', result);
       return result;
     }
   }
 
   private fixJsonFormatting(content: string): string {
-    let fixed = content;
+    let fixed = content.trim();
+    
+    // Remove any extra text before the JSON
+    const jsonStart = fixed.indexOf('{');
+    const jsonEnd = fixed.lastIndexOf('}') + 1;
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      fixed = fixed.substring(jsonStart, jsonEnd);
+    }
     
     // Fix missing commas after closing braces/brackets before opening braces
-    fixed = fixed.replace(/}\s*\n\s*{/g, '},\n    {');
-    
-    // Fix missing commas after values before closing braces
-    fixed = fixed.replace(/"\s*\n\s*}/g, '"\n  }');
+    fixed = fixed.replace(/}\s*\n?\s*{/g, '},\n    {');
     
     // Fix missing commas after string values before next property
     fixed = fixed.replace(/"\s*\n\s*"/g, '",\n  "');
     
+    // Fix missing commas after values before closing braces
+    fixed = fixed.replace(/"\s*\n\s*}/g, '"\n  }');
+    
+    // Fix missing commas after arrays
+    fixed = fixed.replace(/]\s*\n\s*"/g, '],\n  "');
+    
     // Fix null values that are strings
     fixed = fixed.replace(/"null"/g, 'null');
     
-    // Fix any trailing commas before closing braces
+    // Fix any trailing commas before closing braces or brackets
     fixed = fixed.replace(/,\s*}/g, '}');
     fixed = fixed.replace(/,\s*]/g, ']');
+    
+    // Fix missing quotes around property names
+    fixed = fixed.replace(/(\n\s*)([^"{\s][^:\n]*?)(\s*:)/g, '$1"$2"$3');
+    
+    // Fix arrays without proper JSON structure
+    fixed = fixed.replace(/\[\s*([^[\]]*?)\s*\]/g, (match, content) => {
+      if (!content.trim()) return '[]';
+      // If it looks like already proper JSON array, leave it
+      if (content.includes('{') && content.includes('}')) return match;
+      // Otherwise wrap simple values in quotes
+      const items = content.split(',').map(item => {
+        const trimmed = item.trim();
+        if (trimmed.startsWith('"') && trimmed.endsWith('"')) return trimmed;
+        return `"${trimmed}"`;
+      });
+      return `[${items.join(', ')}]`;
+    });
     
     return fixed;
   }
