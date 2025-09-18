@@ -187,6 +187,9 @@ ${text}
         cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
       }
       
+      // Fix common JSON formatting issues  
+      cleanContent = this.fixJsonFormatting(cleanContent);
+      
       const extractedData = JSON.parse(cleanContent);
       
       // Helper function to convert values to strings
@@ -234,8 +237,31 @@ ${text}
       
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
+      console.error('Problematic content:', content);
       throw new Error('תגובה לא תקינה מ-OpenAI');
     }
+  }
+
+  private fixJsonFormatting(content: string): string {
+    let fixed = content;
+    
+    // Fix missing commas after closing braces/brackets before opening braces
+    fixed = fixed.replace(/}\s*\n\s*{/g, '},\n    {');
+    
+    // Fix missing commas after values before closing braces
+    fixed = fixed.replace(/"\s*\n\s*}/g, '"\n  }');
+    
+    // Fix missing commas after string values before next property
+    fixed = fixed.replace(/"\s*\n\s*"/g, '",\n  "');
+    
+    // Fix null values that are strings
+    fixed = fixed.replace(/"null"/g, 'null');
+    
+    // Fix any trailing commas before closing braces
+    fixed = fixed.replace(/,\s*}/g, '}');
+    fixed = fixed.replace(/,\s*]/g, ']');
+    
+    return fixed;
   }
   
   private cleanHebrewText(text: string): string {
