@@ -1,6 +1,7 @@
 import { ProcessedDocument } from '@/types/document';
 import { OpenAIService } from './openaiService';
 import { GoogleOcrService } from './googleOcrService';
+import { getDocument } from 'pdfjs-dist';
 
 export class DocumentProcessor {
   private openaiService: OpenAIService;
@@ -29,58 +30,42 @@ export class DocumentProcessor {
     try {
       console.log(`Starting to process file: ${file.name}`);
       
-      // Try processing file directly with OpenAI vision FIRST
-      console.log('Sending PDF file directly to OpenAI Vision API...');
+      let extractedText = '';
+      
       try {
-        const extractedData = await this.openaiService.processDocumentFile(file, file.name);
+        // Use PDF.js for proper text extraction
+        console.log('Using PDF.js for text extraction...');
+        extractedText = await this.extractPdfTextWithPdfJs(file);
         
-        return {
-          fileName: file.name,
-          processingStatus: 'completed',
-          ...extractedData
-        } as ProcessedDocument;
-        
-      } catch (directError) {
-        console.error('Direct file processing failed:', directError);
-        console.log('Falling back to text extraction methods...');
-        
-        // Fallback to text extraction methods
-        let extractedText = '';
-        
-        try {
-          // First try using the document parser tool
-          console.log('Using document parser for text extraction...');
+        if (extractedText && extractedText.length > 50) {
+          console.log(`PDF.js successfully extracted ${extractedText.length} characters`);
+        } else if (this.googleApiKey) {
+          // Fallback to Google OCR if PDF.js doesn't work well
+          console.log('PDF.js insufficient, trying Google OCR...');
+          extractedText = await GoogleOcrService.extractTextFromPdf(file, this.googleApiKey);
+          
+          if (extractedText && extractedText.length > 30) {
+            console.log(`Google OCR successfully extracted ${extractedText.length} characters`);
+          } else {
+            throw new Error('Both PDF.js and Google OCR failed');
+          }
+        } else {
+          // Last resort - enhanced extraction
+          console.log('No Google API key, trying enhanced extraction...');
           extractedText = await this.parseDocumentWithTool(file);
           
-          if (extractedText && extractedText.length > 50) {
-            console.log(`Document parser successfully extracted ${extractedText.length} characters`);
-          } else if (this.googleApiKey) {
-            // Fallback to Google OCR if document parser doesn't work well
-            console.log('Document parser insufficient, trying Google OCR...');
-            extractedText = await GoogleOcrService.extractTextFromPdf(file, this.googleApiKey);
-            
-            if (extractedText && extractedText.length > 30) {
-              console.log(`Google OCR successfully extracted ${extractedText.length} characters`);
-            } else {
-              throw new Error('Both document parser and Google OCR failed');
-            }
-          } else {
-            // Last resort - basic extraction
-            console.log('No Google API key, trying basic extraction...');
-            extractedText = await this.extractPdfText(file);
-            
-            if (!extractedText || extractedText.length < 20) {
-              throw new Error('Could not extract sufficient text');
-            }
+          if (!extractedText || extractedText.length < 20) {
+            throw new Error('Could not extract sufficient text');
           }
-          
-          console.log(`Successfully extracted ${extractedText.length} characters`);
-          
-        } catch (error) {
-          console.error('Text extraction failed:', error);
-          
-          if (!this.googleApiKey) {
-            throw new Error(`
+        }
+        
+        console.log(`Successfully extracted ${extractedText.length} characters`);
+        
+      } catch (error) {
+        console.error('Text extraction failed:', error);
+        
+        if (!this.googleApiKey) {
+          throw new Error(`
 לא ניתן לחלץ טקסט מהקובץ.
 
 🔑 הוסף מפתח Google Cloud Vision API לתוצאות טובות יותר:
@@ -91,24 +76,23 @@ export class DocumentProcessor {
 4. הוסף את המפתח בהגדרות המערכת
 
 או נסה קובץ PDF פשוט יותר.
-            `);
-          }
-          
-          throw new Error(`לא ניתן לחלץ טקסט מהקובץ: ${error.message}`);
+          `);
         }
         
-        console.log(`Processing extracted text for ${file.name}:`);
-        console.log('Text sample:', extractedText.substring(0, 200));
-        
-        // Process with OpenAI
-        const extractedData = await this.openaiService.processDocumentText(extractedText, file.name);
-        
-        return {
-          fileName: file.name,
-          processingStatus: 'completed',
-          ...extractedData
-        } as ProcessedDocument;
+        throw new Error(`לא ניתן לחלץ טקסט מהקובץ: ${error.message}`);
       }
+      
+      console.log(`Processing extracted text for ${file.name}:`);
+      console.log('Text sample:', extractedText.substring(0, 200));
+      
+      // Process with OpenAI
+      const extractedData = await this.openaiService.processDocumentText(extractedText, file.name);
+      
+      return {
+        fileName: file.name,
+        processingStatus: 'completed',
+        ...extractedData
+      } as ProcessedDocument;
       
     } catch (error) {
       console.error(`Error processing file ${file.name}:`, error);
@@ -134,6 +118,39 @@ export class DocumentProcessor {
         processingStatus: 'error',
         errorMessage: error.message
       } as ProcessedDocument;
+    }
+  }
+
+  private async extractPdfTextWithPdfJs(file: File): Promise<string> {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await getDocument({ data: arrayBuffer }).promise;
+      
+      let fullText = '';
+      
+      for (let pageNum = 1; pageNum <= Math.min(pdf.numPages, 10); pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const textContent = await page.getTextContent();
+        
+        // Combine text items into readable text
+        const pageText = textContent.items
+          .filter((item: any) => item.str && item.str.trim())
+          .map((item: any) => item.str)
+          .join(' ');
+        
+        fullText += pageText + '\n\n';
+      }
+      
+      console.log(`PDF.js extracted ${fullText.length} characters from ${Math.min(pdf.numPages, 10)} pages`);
+      
+      if (fullText.length < 50) {
+        throw new Error('PDF.js extracted insufficient text');
+      }
+      
+      return fullText.trim();
+    } catch (error) {
+      console.error('PDF.js extraction failed:', error);
+      throw new Error(`PDF.js failed: ${error.message}`);
     }
   }
   
