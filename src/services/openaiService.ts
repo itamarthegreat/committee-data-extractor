@@ -178,6 +178,8 @@ ${text}
   }
   
   private parseOpenAIResponse(content: string): Partial<ProcessedDocument> {
+    console.log('OpenAI raw response content:', content);
+    
     try {
       // Clean the response - remove markdown code blocks if present
       let cleanContent = content;
@@ -189,11 +191,13 @@ ${text}
       
       // Fix common JSON formatting issues  
       cleanContent = this.fixJsonFormatting(cleanContent);
+      console.log('Cleaned content for parsing:', cleanContent);
       
       // Try parsing directly first, if fails use simple fallback
       let extractedData: any;
       try {
         extractedData = JSON.parse(cleanContent);
+        console.log('Successfully parsed JSON:', extractedData);
       } catch (jsonError) {
         // Simple regex fallback for key fields
         const result: Partial<ProcessedDocument> = {};
@@ -214,8 +218,8 @@ ${text}
       }
       
       // Helper function to convert values to strings
-      const convertToString = (value: any): string | null => {
-        if (value === null || value === undefined) return null;
+      const convertToString = (value: any): string => {
+        if (value === null || value === undefined || value === "null") return "";
         if (typeof value === 'string') return value;
         if (Array.isArray(value)) {
           // Convert array to formatted string
@@ -229,7 +233,7 @@ ${text}
             return String(item);
           }).join(', ');
         }
-        if (typeof value === 'object') return JSON.stringify(value);
+        if (typeof value === 'object' && value !== null) return JSON.stringify(value);
         return String(value);
       };
       
