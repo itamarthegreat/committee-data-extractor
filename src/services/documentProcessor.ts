@@ -35,40 +35,62 @@ export class DocumentProcessor {
       
       let extractedText = '';
       
+      // Try PDF.js first
       try {
-        // Use PDF.js for proper text extraction
         console.log('Using PDF.js for text extraction...');
         extractedText = await this.extractPdfTextWithPdfJs(file);
         
         if (extractedText && extractedText.length > 50) {
           console.log(`PDF.js successfully extracted ${extractedText.length} characters`);
-        } else if (this.googleApiKey) {
-          // Fallback to Google OCR if PDF.js doesn't work well
-          console.log('PDF.js insufficient, trying Google OCR...');
-          extractedText = await GoogleOcrService.extractTextFromPdf(file, this.googleApiKey);
-          
-          if (extractedText && extractedText.length > 30) {
-            console.log(`Google OCR successfully extracted ${extractedText.length} characters`);
-          } else {
-            throw new Error('Both PDF.js and Google OCR failed');
+        } else {
+          throw new Error('PDF.js extracted insufficient text');
+        }
+      } catch (pdfError) {
+        console.warn('PDF.js failed:', pdfError.message);
+        
+        // Try Google OCR if available
+        if (this.googleApiKey) {
+          try {
+            console.log('Trying Google OCR fallback...');
+            extractedText = await GoogleOcrService.extractTextFromPdf(file, this.googleApiKey);
+            
+            if (extractedText && extractedText.length > 30) {
+              console.log(`Google OCR successfully extracted ${extractedText.length} characters`);
+            } else {
+              throw new Error('Google OCR extracted insufficient text');
+            }
+          } catch (googleError) {
+            console.warn('Google OCR failed:', googleError.message);
+            
+            // Last resort - enhanced extraction
+            try {
+              console.log('Trying enhanced extraction as last resort...');
+              extractedText = await this.parseDocumentWithTool(file);
+              
+              if (extractedText && extractedText.length > 20) {
+                console.log(`Enhanced extraction successfully extracted ${extractedText.length} characters`);
+              } else {
+                throw new Error('Enhanced extraction failed');
+              }
+            } catch (enhancedError) {
+              console.error('All extraction methods failed:', enhancedError.message);
+              throw new Error(`לא ניתן לחלץ טקסט מהקובץ: כל שיטות החילוץ נכשלו`);
+            }
           }
         } else {
-          // Last resort - enhanced extraction
-          console.log('No Google API key, trying enhanced extraction...');
-          extractedText = await this.parseDocumentWithTool(file);
-          
-          if (!extractedText || extractedText.length < 20) {
-            throw new Error('Could not extract sufficient text');
-          }
-        }
-        
-        console.log(`Successfully extracted ${extractedText.length} characters`);
-        
-      } catch (error) {
-        console.error('Text extraction failed:', error);
-        
-        if (!this.googleApiKey) {
-          throw new Error(`
+          // No Google API key - try enhanced extraction directly
+          try {
+            console.log('No Google API key, trying enhanced extraction...');
+            extractedText = await this.parseDocumentWithTool(file);
+            
+            if (extractedText && extractedText.length > 20) {
+              console.log(`Enhanced extraction successfully extracted ${extractedText.length} characters`);
+            } else {
+              throw new Error('Enhanced extraction failed');
+            }
+          } catch (enhancedError) {
+            console.error('Enhanced extraction failed:', enhancedError.message);
+            throw new Error(`
 לא ניתן לחלץ טקסט מהקובץ.
 
 🔑 הוסף מפתח Google Cloud Vision API לתוצאות טובות יותר:
@@ -79,11 +101,12 @@ export class DocumentProcessor {
 4. הוסף את המפתח בהגדרות המערכת
 
 או נסה קובץ PDF פשוט יותר.
-          `);
+            `);
+          }
         }
-        
-        throw new Error(`לא ניתן לחלץ טקסט מהקובץ: ${error.message}`);
       }
+      
+      console.log(`Successfully extracted ${extractedText.length} characters`);
       
       console.log(`Processing extracted text for ${file.name}:`);
       console.log('Text sample:', extractedText.substring(0, 200));
