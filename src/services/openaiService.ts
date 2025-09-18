@@ -189,25 +189,48 @@ ${text}
       
       const extractedData = JSON.parse(cleanContent);
       
-      return {
-        "סוג ועדה": extractedData["סוג ועדה"] || null,
-        "שם טופס": extractedData["שם טופס"] || null,
-        "סניף הוועדה": extractedData["סניף הוועדה"] || null,
-        "שם המבוטח": extractedData["שם המבוטח"] || null,
-        "ת.ז:": extractedData["ת.ז:"] || null,
-        "תאריך פגיעה(רק באיבה,נכות מעבודה)": extractedData["תאריך פגיעה(רק באיבה,נכות מעבודה)"] || null,
-        "משתתפי הועדה": extractedData["משתתפי הועדה"] || null,
-        "תקופה": extractedData["תקופה"] || null,
-        "אבחנה": extractedData["אבחנה"] || null,
-        "סעיף ליקוי": extractedData["סעיף ליקוי"] || null,
-        "אחוז הנכות הנובע מהפגיעה": extractedData["אחוז הנכות הנובע מהפגיעה"] || null,
-        "הערות": extractedData["הערות"] || null,
-        "מתאריך": extractedData["מתאריך"] || null,
-        "עד תאריך": extractedData["עד תאריך"] || null,
-        "מידת הנכות": extractedData["מידת הנכות"] || null,
-        "אחוז הנכות משוקלל": extractedData["אחוז הנכות משוקלל"] || null,
-        "שקלול לפטור ממס": extractedData["שקלול לפטור ממס"] || null,
+      // Helper function to convert values to strings
+      const convertToString = (value: any): string | null => {
+        if (value === null || value === undefined) return null;
+        if (typeof value === 'string') return value;
+        if (Array.isArray(value)) {
+          // Convert array to formatted string
+          return value.map(item => {
+            if (typeof item === 'object' && item !== null) {
+              if (item.שם && item.תפקיד) {
+                return `${item.שם} (${item.תפקיד})`;
+              }
+              return Object.values(item).join(' - ');
+            }
+            return String(item);
+          }).join(', ');
+        }
+        if (typeof value === 'object') return JSON.stringify(value);
+        return String(value);
       };
+      
+      const result: Partial<ProcessedDocument> = {};
+      
+      // Map all the fields
+      if (extractedData["סוג ועדה"]) result["סוג ועדה"] = convertToString(extractedData["סוג ועדה"]);
+      if (extractedData["שם טופס"]) result["שם טופס"] = convertToString(extractedData["שם טופס"]);
+      if (extractedData["סניף הוועדה"]) result["סניף הוועדה"] = convertToString(extractedData["סניף הוועדה"]);
+      if (extractedData["שם המבוטח"]) result["שם המבוטח"] = convertToString(extractedData["שם המבוטח"]);
+      if (extractedData["ת.ז:"]) result["ת.ז:"] = convertToString(extractedData["ת.ז:"]);
+      if (extractedData["תאריך פגיעה(רק באיבה,נכות מעבודה)"]) result["תאריך פגיעה(רק באיבה,נכות מעבודה)"] = convertToString(extractedData["תאריך פגיעה(רק באיבה,נכות מעבודה)"]);
+      if (extractedData["משתתפי הועדה"]) result["משתתפי הועדה"] = convertToString(extractedData["משתתפי הועדה"]);
+      if (extractedData["תקופה"]) result["תקופה"] = convertToString(extractedData["תקופה"]);
+      if (extractedData["אבחנה"]) result["אבחנה"] = convertToString(extractedData["אבחנה"]);
+      if (extractedData["סעיף ליקוי"]) result["סעיף ליקוי"] = convertToString(extractedData["סעיף ליקוי"]);
+      if (extractedData["אחוז הנכות הנובע מהפגיעה"]) result["אחוז הנכות הנובע מהפגיעה"] = convertToString(extractedData["אחוז הנכות הנובע מהפגיעה"]);
+      if (extractedData["הערות"]) result["הערות"] = convertToString(extractedData["הערות"]);
+      if (extractedData["מתאריך"]) result["מתאריך"] = convertToString(extractedData["מתאריך"]);
+      if (extractedData["עד תאריך"]) result["עד תאריך"] = convertToString(extractedData["עד תאריך"]);
+      if (extractedData["מידת הנכות"]) result["מידת הנכות"] = convertToString(extractedData["מידת הנכות"]);
+      if (extractedData["אחוז הנכות משוקלל"]) result["אחוז הנכות משוקלל"] = convertToString(extractedData["אחוז הנכות משוקלל"]);
+      if (extractedData["שקלול לפטור ממס"]) result["שקלול לפטור ממס"] = convertToString(extractedData["שקלול לפטור ממס"]);
+      
+      return result;
       
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
