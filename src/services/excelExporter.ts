@@ -8,7 +8,7 @@ export class ExcelExporter {
     
     const workbook = XLSX.utils.book_new();
     
-    // Create enhanced summary sheet
+    // Create enhanced summary sheet with separated diagnoses
     this.createEnhancedSummarySheet(workbook, documents);
     
     // Create detailed sheets for each document  
@@ -30,31 +30,41 @@ export class ExcelExporter {
         'תאריך פגיעה(רק באיבה,נכות מעבודה)', 'משתתפי הועדה', 'תקופה', 'אבחנה', 
         'סעיף ליקוי', 'אחוז הנכות הנובע מהפגיעה', 'הערות', 'מתאריך', 'עד תאריך', 
         'מידת הנכות', 'אחוז הנכות משוקלל', 'שקלול לפטור ממס', 'סטטוס'
-      ],
-      ...documents.map((doc, index) => [
-        index + 1,
-        doc.fileName,
-        doc["סוג ועדה"] || '-',
-        doc["שם טופס"] || '-',
-        doc["סניף הוועדה"] || '-',
-        doc["שם המבוטח"] || '-',
-        doc["ת.ז:"] || '-',
-        doc["תאריך פגיעה(רק באיבה,נכות מעבודה)"] || '-',
-        doc["משתתפי הועדה"] || '-',
-        doc["תקופה"] || '-',
-        doc["אבחנה"] || '-',
-        doc["סעיף ליקוי"] || '-',
-        doc["אחוז הנכות הנובע מהפגיעה"] || '-',
-        doc["הערות"] || '-',
-        doc["מתאריך"] || '-',
-        doc["עד תאריך"] || '-',
-        doc["מידת הנכות"] || '-',
-        doc["אחוז הנכות משוקלל"] || '-',
-        doc["שקלול לפטור ממס"] || '-',
-        doc.processingStatus === 'completed' ? '✓ הושלם' : 
-        doc.processingStatus === 'error' ? '✗ שגיאה' : '⏳ בעיבוד'
-      ])
+      ]
     ];
+
+    // Process each document and create separate rows for each diagnosis
+    documents.forEach((doc, docIndex) => {
+      const diagnoses = doc["אבחנה"] ? doc["אבחנה"].split(',').map(d => d.trim()) : ['-'];
+      
+      diagnoses.forEach((diagnosis, diagnosisIndex) => {
+        const rowNumber = diagnosisIndex === 0 ? (docIndex + 1).toString() : `${docIndex + 1}.${diagnosisIndex + 1}`;
+        
+        summaryData.push([
+          rowNumber,
+          doc.fileName,
+          doc["סוג ועדה"] || '-',
+          doc["שם טופס"] || '-',
+          doc["סניף הוועדה"] || '-',
+          doc["שם המבוטח"] || '-',
+          doc["ת.ז:"] || '-',
+          doc["תאריך פגיעה(רק באיבה,נכות מעבודה)"] || '-',
+          doc["משתתפי הועדה"] || '-',
+          doc["תקופה"] || '-',
+          diagnosis,
+          doc["סעיף ליקוי"] || '-',
+          doc["אחוז הנכות הנובע מהפגיעה"] || '-',
+          doc["הערות"] || '-',
+          doc["מתאריך"] || '-',
+          doc["עד תאריך"] || '-',
+          doc["מידת הנכות"] || '-',
+          doc["אחוז הנכות משוקלל"] || '-',
+          doc["שקלול לפטור ממס"] || '-',
+          doc.processingStatus === 'completed' ? '✓ הושלם' : 
+          doc.processingStatus === 'error' ? '✗ שגיאה' : '⏳ בעיבוד'
+        ]);
+      });
+    });
     
     const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
     
