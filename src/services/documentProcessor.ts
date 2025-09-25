@@ -10,23 +10,17 @@ export class DocumentProcessor {
   private openaiService: OpenAIService;
   private googleApiKey: string | null = null;
   
-  constructor(apiKey: string, googleApiKey?: string) {
-    this.openaiService = new OpenAIService(apiKey);
-    this.googleApiKey = googleApiKey || this.getStoredGoogleApiKey();
-  }
-  
-  private getStoredGoogleApiKey(): string | null {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('googleCloudApiKey');
+  constructor() {
+    // Use environment variables for API keys
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    const googleApiKey = process.env.GOOGLE_CLOUD_API_KEY;
+    
+    if (!openaiApiKey) {
+      throw new Error('OpenAI API key not found in environment variables');
     }
-    return null;
-  }
-  
-  setGoogleApiKey(apiKey: string): void {
-    this.googleApiKey = apiKey;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('googleCloudApiKey', apiKey);
-    }
+    
+    this.openaiService = new OpenAIService(openaiApiKey);
+    this.googleApiKey = googleApiKey || null;
   }
   
   async processFile(file: File): Promise<ProcessedDocument> {

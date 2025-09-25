@@ -1,11 +1,9 @@
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Upload, Download, Settings } from 'lucide-react';
+import { FileText, Upload, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import FileUpload from '@/components/FileUpload';
-import ApiKeyInput from '@/components/ApiKeyInput';
-import GoogleApiKeyInput from '@/components/GoogleApiKeyInput';
 import ProcessingResults from '@/components/ProcessingResults';
 import { ProcessedDocument } from '@/types/document';
 import { DocumentProcessor } from '@/services/documentProcessor';
@@ -13,8 +11,6 @@ import { ExcelExporter } from '@/services/excelExporter';
 
 const Index = () => {
   const [files, setFiles] = useState<File[]>([]);
-  const [apiKey, setApiKey] = useState<string>('');
-  const [googleApiKey, setGoogleApiKey] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState<ProcessedDocument[]>([]);
   const { toast } = useToast();
@@ -23,26 +19,7 @@ const Index = () => {
     setFiles(newFiles);
   };
 
-  const handleApiKeyChange = (key: string) => {
-    setApiKey(key);
-    // Store in localStorage for convenience
-    localStorage.setItem('openai_api_key', key);
-  };
-
-  const handleGoogleApiKeyChange = (key: string) => {
-    setGoogleApiKey(key);
-  };
-
   const processDocuments = async () => {
-    if (!apiKey) {
-      toast({
-        title: "שגיאה",
-        description: "נא להזין מפתח API של OpenAI",
-        variant: "destructive"
-      });
-      return;
-    }
-
     if (files.length === 0) {
       toast({
         title: "שגיאה", 
@@ -88,8 +65,8 @@ const Index = () => {
       
       setResults(processingResults);
 
-      // Initialize document processor with API keys
-      const processor = new DocumentProcessor(apiKey, googleApiKey);
+      // Initialize document processor (uses environment variables)
+      const processor = new DocumentProcessor();
       
       // Process all files using the new service architecture
       const processedResults = await processor.processMultipleFiles(files);
@@ -157,21 +134,9 @@ const Index = () => {
         </div>
 
         {/* Main Content */}
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           {/* Left Panel - Controls */}
           <div className="xl:col-span-1 space-y-6">
-            <Card className="p-6 shadow-soft border-0 bg-card/50 backdrop-blur-sm">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <Settings className="h-5 w-5 text-primary" />
-                </div>
-                <h2 className="text-xl font-semibold">הגדרות</h2>
-              </div>
-              <ApiKeyInput value={apiKey} onChange={handleApiKeyChange} />
-            </Card>
-
-            <GoogleApiKeyInput onApiKeyChange={handleGoogleApiKeyChange} />
-
             <Card className="p-6 shadow-soft border-0 bg-card/50 backdrop-blur-sm">
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 rounded-lg bg-primary/10">
@@ -184,7 +149,7 @@ const Index = () => {
               {/* Process Button */}
               <Button 
                 onClick={processDocuments}
-                disabled={isProcessing || !apiKey || files.length === 0}
+                disabled={isProcessing || files.length === 0}
                 className="w-full h-12 text-lg font-semibold bg-gradient-primary hover:opacity-90 transition-smooth mt-6"
                 size="lg"
               >
@@ -201,10 +166,23 @@ const Index = () => {
                 )}
               </Button>
             </Card>
+            
+            <Card className="p-6 shadow-soft border-0 bg-card/50 backdrop-blur-sm">
+              <div className="text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 p-3 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <span className="font-semibold">מפתחות API מוגדרים</span>
+                </div>
+                <ul className="text-xs space-y-1 mr-4">
+                  <li>✅ OpenAI API - מוכן לעיבוד</li>
+                  <li>✅ Google Cloud Vision - OCR משופר</li>
+                </ul>
+              </div>
+            </Card>
           </div>
 
           {/* Right Panel - Results */}
-          <div className="xl:col-span-3">
+          <div className="xl:col-span-1">
             <Card className="p-8 shadow-soft border-0 bg-card/50 backdrop-blur-sm min-h-[700px]">
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
