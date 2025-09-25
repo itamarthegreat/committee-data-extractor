@@ -200,9 +200,24 @@ ${text}
       cleanContent = this.fixJsonFormatting(cleanContent);
       console.log('Cleaned content for parsing:', cleanContent);
       
-      // Parse the JSON
-      const extractedData = JSON.parse(cleanContent);
-      console.log('Successfully parsed JSON:', extractedData);
+      // Parse the JSON with better error handling
+      let extractedData;
+      try {
+        extractedData = JSON.parse(cleanContent);
+        console.log('Successfully parsed JSON:', extractedData);
+      } catch (parseError) {
+        console.error('JSON parse error details:', parseError);
+        console.error('Problematic content:', cleanContent);
+        // Try to fix common issues and parse again
+        const fixedContent = cleanContent
+          .replace(/\u200B/g, '') // Remove zero-width spaces
+          .replace(/\u00A0/g, ' ') // Replace non-breaking spaces
+          .replace(/[\u200C\u200D]/g, '') // Remove zero-width joiners
+          .trim();
+        console.log('Trying fixed content:', fixedContent);
+        extractedData = JSON.parse(fixedContent);
+        console.log('Successfully parsed fixed JSON:', extractedData);
+      }
       
       // Helper function to convert values to strings
       const convertToString = (value: any): string => {
