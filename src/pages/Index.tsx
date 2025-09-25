@@ -1,20 +1,16 @@
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Upload, Download, Settings } from 'lucide-react';
+import { FileText, Upload, Download } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import FileUpload from '@/components/FileUpload';
-import ApiKeyInput from '@/components/ApiKeyInput';
-import GoogleApiKeyInput from '@/components/GoogleApiKeyInput';
 import ProcessingResults from '@/components/ProcessingResults';
 import { ProcessedDocument } from '@/types/document';
-import { DocumentProcessor } from '@/services/documentProcessor';
 import { ExcelExporter } from '@/services/excelExporter';
+import { supabase } from '@/integrations/supabase/client';
 
 const Index = () => {
   const [files, setFiles] = useState<File[]>([]);
-  const [apiKey, setApiKey] = useState<string>('');
-  const [googleApiKey, setGoogleApiKey] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState<ProcessedDocument[]>([]);
   const { toast } = useToast();
@@ -23,26 +19,7 @@ const Index = () => {
     setFiles(newFiles);
   };
 
-  const handleApiKeyChange = (key: string) => {
-    setApiKey(key);
-    // Store in localStorage for convenience
-    localStorage.setItem('openai_api_key', key);
-  };
-
-  const handleGoogleApiKeyChange = (key: string) => {
-    setGoogleApiKey(key);
-  };
-
   const processDocuments = async () => {
-    if (!apiKey) {
-      toast({
-        title: "שגיאה",
-        description: "נא להזין מפתח API של OpenAI",
-        variant: "destructive"
-      });
-      return;
-    }
-
     if (files.length === 0) {
       toast({
         title: "שגיאה", 
@@ -61,7 +38,7 @@ const Index = () => {
     });
 
     try {
-      console.log('Processing files with new architecture:', files);
+      console.log('Processing files with server-side edge function:', files);
       
       // Create initial processing results
       const processingResults: ProcessedDocument[] = files.map(file => ({
@@ -88,13 +65,66 @@ const Index = () => {
       
       setResults(processingResults);
 
-      // Initialize document processor with API keys
-      const processor = new DocumentProcessor(apiKey, googleApiKey);
+      // Process each file through the edge function
+      const processedResults: ProcessedDocument[] = [];
       
-      // Process all files using the new service architecture
-      const processedResults = await processor.processMultipleFiles(files);
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+          console.log(`Processing file ${i + 1}/${files.length}: ${file.name}`);
+          
+          const formData = new FormData();
+          formData.append('file', file);
+          
+          const { data, error } = await supabase.functions.invoke('process-documents', {
+            body: formData,
+          });
+          
+          if (error) {
+            throw new Error(error.message);
+          }
+          
+          processedResults.push(data);
+          
+          // Update results incrementally
+          setResults(prev => prev.map((result, index) => 
+            index === i ? data : result
+          ));
+          
+        } catch (fileError) {
+          console.error(`Error processing file ${file.name}:`, fileError);
+          const errorResult = {
+            fileName: file.name,
+            "סוג ועדה": null,
+            "שם טופס": null,
+            "סניף הוועדה": null,
+            "שם המבוטח": null,
+            "ת.ז:": null,
+            "תאריך פגיעה(רק באיבה,נכות מעבודה)": null,
+            "משתתפי הועדה": null,
+            "תקופה": null,
+            "אבחנה": null,
+            "סעיף ליקוי": null,
+            "אחוז הנכות הנובע מהפגיעה": null,
+            "הערות": null,
+            "מתאריך": null,
+            "עד תאריך": null,
+            "מידת הנכות": null,
+            "אחוז הנכות משוקלל": null,
+            "שקלול לפטור ממס": null,
+            processingStatus: 'error' as const,
+            errorMessage: fileError instanceof Error ? fileError.message : 'Unknown error'
+          } as ProcessedDocument;
+          
+          processedResults.push(errorResult);
+          
+          // Update results incrementally
+          setResults(prev => prev.map((result, index) => 
+            index === i ? errorResult : result
+          ));
+        }
+      }
 
-      setResults(processedResults);
       setIsProcessing(false);
       
       const successCount = processedResults.filter(r => r.processingStatus === 'completed').length;
@@ -163,18 +193,6 @@ const Index = () => {
             <Card className="p-6 shadow-soft border-0 bg-card/50 backdrop-blur-sm">
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 rounded-lg bg-primary/10">
-                  <Settings className="h-5 w-5 text-primary" />
-                </div>
-                <h2 className="text-xl font-semibold">הגדרות</h2>
-              </div>
-              <ApiKeyInput value={apiKey} onChange={handleApiKeyChange} />
-            </Card>
-
-            <GoogleApiKeyInput onApiKeyChange={handleGoogleApiKeyChange} />
-
-            <Card className="p-6 shadow-soft border-0 bg-card/50 backdrop-blur-sm">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 rounded-lg bg-primary/10">
                   <Upload className="h-5 w-5 text-primary" />
                 </div>
                 <h2 className="text-xl font-semibold">העלאת קבצים</h2>
@@ -184,7 +202,7 @@ const Index = () => {
               {/* Process Button */}
               <Button 
                 onClick={processDocuments}
-                disabled={isProcessing || !apiKey || files.length === 0}
+                disabled={isProcessing || files.length === 0}
                 className="w-full h-12 text-lg font-semibold bg-gradient-primary hover:opacity-90 transition-smooth mt-6"
                 size="lg"
               >
@@ -196,7 +214,7 @@ const Index = () => {
                 ) : (
                   <div className="flex items-center gap-3">
                     <FileText className="h-5 w-5" />
-                    עבד מסמכים
+                    עבד מסמכים ({files.length})
                   </div>
                 )}
               </Button>
