@@ -61,11 +61,21 @@ const Index = () => {
   const exportAllToExcel = () => {
     if (results.length === 0) return;
     
+    const successfulResults = results.filter(r => r.processingStatus === 'completed');
+    const totalDiagnoses = successfulResults.reduce((count, doc) => {
+      const diagnosis = doc["אבחנה"];
+      if (diagnosis && diagnosis.trim() !== '') {
+        const diagnosesArray = diagnosis.split(/[,،;؛]/).map(d => d.trim()).filter(d => d.length > 0);
+        return count + diagnosesArray.length;
+      }
+      return count;
+    }, 0);
+    
     ExcelExporter.exportToExcel(results);
     
     toast({
-      title: "הורד בהצלחה",
-      description: "הקובץ נשמר בהצלחה עם מיפוי משופר"
+      title: "יוצא לאקסל בהצלחה!",
+      description: `נוצר קובץ אקסל עם ${results.length} מסמכים, ${totalDiagnoses} אבחנות, וגליון "כולם ביחד"`
     });
   };
 
@@ -116,7 +126,7 @@ const Index = () => {
                     className="w-full"
                   >
                     <Download className="mr-2 h-4 w-4" />
-                    יצא לאקסל
+                    יצא הכל לאקסל ({results.length} מסמכים)
                   </Button>
                 )}
               </CardContent>
