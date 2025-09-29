@@ -158,25 +158,48 @@ function parseOpenAIResponse(content: string): any {
   
   try {
     // Clean the response
-    let cleanContent = content;
+    let cleanContent = content.trim();
+    
+    // Remove markdown code blocks
     if (cleanContent.startsWith('```json')) {
       cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
     } else if (cleanContent.startsWith('```')) {
       cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
     }
     
+    // Apply multiple rounds of JSON fixing
     cleanContent = fixJsonFormatting(cleanContent);
     
     let extractedData;
     try {
       extractedData = JSON.parse(cleanContent);
     } catch (parseError) {
-      const fixedContent = cleanContent
-        .replace(/\u200B/g, '')
-        .replace(/\u00A0/g, ' ')
-        .replace(/[\u200C\u200D]/g, '')
+      console.error('First parse attempt failed:', parseError);
+      
+      // Try more aggressive fixing
+      let fixedContent = cleanContent
+        .replace(/\u200B/g, '') // Zero-width space
+        .replace(/\u00A0/g, ' ') // Non-breaking space
+        .replace(/[\u200C\u200D]/g, '') // Zero-width non-joiner/joiner
+        .replace(/[\u202A-\u202E]/g, '') // Left-to-right/right-to-left marks
+        .replace(/\\/g, '\\\\') // Escape backslashes
+        .replace(/"/g, '\\"') // Escape quotes
+        .replace(/\\"/g, '"') // Fix over-escaped quotes
+        .replace(/"\s*:\s*"/g, '": "') // Fix spacing around colons
+        .replace(/",\s*"/g, '", "') // Fix spacing around commas
         .trim();
-      extractedData = JSON.parse(fixedContent);
+      
+      // Try to fix common JSON issues
+      fixedContent = fixJsonFormatting(fixedContent);
+      
+      try {
+        extractedData = JSON.parse(fixedContent);
+      } catch (secondParseError) {
+        console.error('Second parse attempt failed:', secondParseError);
+        
+        // Last resort: use regex to extract fields
+        return extractDataWithRegex(content);
+      }
     }
     
     const convertToString = (value: any): string => {
@@ -237,34 +260,108 @@ function parseOpenAIResponse(content: string): any {
 function fixJsonFormatting(content: string): string {
   let fixed = content.trim();
   
+  // Extract JSON object
   const jsonStart = fixed.indexOf('{');
   const jsonEnd = fixed.lastIndexOf('}') + 1;
   if (jsonStart !== -1 && jsonEnd !== -1) {
     fixed = fixed.substring(jsonStart, jsonEnd);
   }
   
+  // Fix common JSON formatting issues
   fixed = fixed.replace(/}\s*\n?\s*{/g, '},\n    {');
   fixed = fixed.replace(/"\s*\n\s*"/g, '",\n  "');
   fixed = fixed.replace(/"\s*\n\s*}/g, '"\n  }');
   fixed = fixed.replace(/]\s*\n\s*"/g, '],\n  "');
+  
+  // Handle null values
   fixed = fixed.replace(/"null"/g, 'null');
-  fixed = fixed.replace(/,\s*}/g, '}');
-  fixed = fixed.replace(/,\s*]/g, ']');
+  fixed = fixed.replace(/:\s*null\s*"/g, ': null');
+  fixed = fixed.replace(/:\s*""\s*,/g, ': null,');
+  fixed = fixed.replace(/:\s*""\s*}/g, ': null}');
+  
+  // Remove trailing commas
+  fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
+  
+  // Fix unquoted property names
   fixed = fixed.replace(/(\n\s*)([^"{\s][^:\n]*?)(\s*:)/g, '$1"$2"$3');
   
+  // Fix escaped quotes in values
+  fixed = fixed.replace(/: "([^"]*)\\"([^"]*)"([^,}\n]*)/g, ': "$1\\"$2"');
+  
+  // Ensure proper structure
+  if (!fixed.startsWith('{')) fixed = '{' + fixed;
+  if (!fixed.endsWith('}')) fixed = fixed + '}';
+  
   return fixed;
+}
+
+function extractDataWithRegex(content: string): any {
+  console.log('Using regex fallback for data extraction');
+  
+  const result: any = {};
+  
+  const patterns = {
+    'סוג ועדה': /"סוג ועדה"[:\s]*"([^"]+)"/,
+    'שם טופס': /"שם טופס"[:\s]*"([^"]+)"/,
+    'סניף הוועדה': /"סניף הוועדה"[:\s]*"([^"]+)"/,
+    'שם המבוטח': /"שם המבוטח"[:\s]*"([^"]+)"/,
+    'ת.ז:': /"ת\.ז:"[:\s]*"([^"]+)"/,
+    'תאריך פגיעה(רק באיבה,נכות מעבודה)': /"תאריך פגיעה\(רק באיבה,נכות מעבודה\)"[:\s]*"([^"]+)"/,
+    'משתתפי הועדה': /"משתתפי הועדה"[:\s]*"([^"]+)"/,
+    'תקופה': /"תקופה"[:\s]*"([^"]+)"/,
+    'אבחנה': /"אבחנה"[:\s]*"([^"]+)"/,
+    'סעיף ליקוי': /"סעיף ליקוי"[:\s]*"([^"]+)"/,
+    'אחוז הנכות הנובע מהפגיעה': /"אחוז הנכות הנובע מהפגיעה"[:\s]*"([^"]+)"/,
+    'הערות': /"הערות"[:\s]*"([^"]+)"/,
+    'מתאריך': /"מתאריך"[:\s]*"([^"]+)"/,
+    'עד תאריך': /"עד תאריך"[:\s]*"([^"]+)"/,
+    'מידת הנכות': /"מידת הנכות"[:\s]*"([^"]+)"/,
+    'אחוז הנכות משוקלל': /"אחוז הנכות משוקלל"[:\s]*"([^"]+)"/,
+    'שקלול לפטור ממס': /"שקלול לפטור ממס"[:\s]*"([^"]+)"/
+  };
+  
+  Object.entries(patterns).forEach(([key, pattern]) => {
+    const match = content.match(pattern);
+    result[key] = match ? match[1] : "";
+  });
+  
+  return result;
 }
 
 function cleanHebrewText(text: string): string {
   if (!text) return '';
   
   let cleaned = text
+    // Remove Hebrew diacritics
     .replace(/[\u0591-\u05BD\u05BF-\u05C2\u05C4-\u05C5\u05C7]/g, '')
+    // Replace Hebrew punctuation
     .replace(/[׃־]/g, ' ')
+    // Clean Hebrew letters with diacritics
     .replace(/[\u05D0-\u05EA][\u0590-\u05C7]+/g, match => match.charAt(0))
+    // Replace Hebrew quotes
     .replace(/[״׳]/g, '"')
+    // Clean up corrupted characters and symbols
+    .replace(/[λ⊥αΛΑαβγδεζηθικμνξοπρστυφχψω∠∀∁∂∃∄∅∆∇∈∉∊∋∌∍∎∏∐∑−∓∔∕∖∗∘∙√∛∜∝∞∟∠∡∢∣∤∥∦∧∨∩∪∫∬∭∮∯∰∱∲∳∴∵∶∷∸∹∺∻∼∽∾∿≀≁≂≃≄≅≆≇≈≉≊≋≌≍≎≏]/g, '')
+    // Remove corrupted text patterns
+    .replace(/[UIXLGCETANOWK]+/g, '')
+    // Clean up random symbols and punctuation
+    .replace(/[^\u05D0-\u05EA\u0590-\u05FF0-9a-zA-Z\s.,;:!?()\[\]{}"'-]/g, ' ')
+    // Normalize whitespace
     .replace(/\s+/g, ' ')
     .trim();
+    
+  // Try to reconstruct readable Hebrew text by looking for patterns
+  const hebrewWords = cleaned.match(/[\u05D0-\u05EA]{2,}/g) || [];
+  const englishWords = cleaned.match(/[a-zA-Z]{2,}/g) || [];
+  const numbers = cleaned.match(/\d+/g) || [];
+  
+  // If we have some Hebrew content, keep it
+  if (hebrewWords.length > 0) {
+    const reconstructed = [...hebrewWords, ...englishWords, ...numbers].join(' ');
+    if (reconstructed.length > cleaned.length * 0.3) {
+      return reconstructed;
+    }
+  }
   
   return cleaned;
 }
