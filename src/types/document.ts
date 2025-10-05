@@ -33,8 +33,6 @@ export interface ProcessedDocument {
   "תאריך ועדה": string | null;
   "תאריך פגיעה(רק באיבה,נכות מעבודה)": string | null;
   "משתתפי הועדה": string | null;
-  "מתקופה": string | null;
-  "תקופה": string | null;
   "אבחנה": string | null;
   "סעיף ליקוי": string | null;
   "אחוז הנכות": string | null;
