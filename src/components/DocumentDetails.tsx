@@ -18,16 +18,20 @@ const DocumentDetails = ({ document, children }: DocumentDetailsProps): JSX.Elem
     const docData = [
       ['שדה', 'ערך'],
       ['שם קובץ', document.fileName],
+      ['כותרת הועדה', document["כותרת הועדה"] || 'לא זוהה'],
       ['סוג ועדה', document["סוג ועדה"] || 'לא זוהה'],
       ['שם טופס', document["שם טופס"] || 'לא זוהה'],
       ['סניף הועדה', document["סניף הוועדה"] || 'לא זוהה'],
       ['שם המבוטח', document["שם המבוטח"] || 'לא זוהה'],
       ['ת.ז:', document["ת.ז:"] || 'לא נמצא'],
+      ['תאריך ועדה', document["תאריך ועדה"] || 'לא זוהה'],
       ['תאריך פגיעה', document["תאריך פגיעה(רק באיבה,נכות מעבודה)"] || 'לא רלוונטי'],
       ['משתתפי הועדה', document["משתתפי הועדה"] || 'לא זוהו'],
+      ['מתקופה', document["מתקופה"] || 'לא צוינה'],
       ['תקופה', document["תקופה"] || 'לא צוינה'],
       ['אבחנה', document["אבחנה"] || 'לא צוינה'],
       ['סעיף ליקוי', document["סעיף ליקוי"] || 'לא צוין'],
+      ['אחוז הנכות', document["אחוז הנכות"] || 'לא צוין'],
       ['אחוז הנכות הנובע מהפגיעה', document["אחוז הנכות הנובע מהפגיעה"] || 'לא צוין'],
       ['הערות', document["הערות"] || 'אין'],
       ['מתאריך', document["מתאריך"] || 'לא צוין'],
@@ -65,22 +69,26 @@ const DocumentDetails = ({ document, children }: DocumentDetailsProps): JSX.Elem
             
             <Card>
               <CardHeader>
-                <CardTitle>מידע כללי</CardTitle>
+                <CardTitle>{document["כותרת הועדה"] || "מידע כללי"}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   {Object.entries({
                     'שם קובץ': document.fileName,
+                    'כותרת הועדה': document["כותרת הועדה"],
                     'סוג ועדה': document["סוג ועדה"],
                     'שם טופס': document["שם טופס"],
                     'סניף הועדה': document["סניף הוועדה"],
                     'שם המבוטח': document["שם המבוטח"],
                     'ת.ז:': document["ת.ז:"],
+                    'תאריך ועדה': document["תאריך ועדה"],
                     'תאריך פגיעה': document["תאריך פגיעה(רק באיבה,נכות מעבודה)"],
                     'משתתפי הועדה': document["משתתפי הועדה"],
+                    'מתקופה': document["מתקופה"],
                     'תקופה': document["תקופה"],
                     'אבחנה': document["אבחנה"],
                     'סעיף ליקוי': document["סעיף ליקוי"],
+                    'אחוז הנכות': document["אחוז הנכות"],
                     'אחוז הנכות הנובע מהפגיעה': document["אחוז הנכות הנובע מהפגיעה"],
                     'הערות': document["הערות"],
                     'מתאריך': document["מתאריך"],

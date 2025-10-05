@@ -37,9 +37,9 @@ export class ExcelExporter {
   private static createEnhancedSummarySheet(workbook: XLSX.WorkBook, documents: ProcessedDocument[]): void {
     const summaryData = [
       [
-        'מס"ד', 'שם קובץ', 'סוג ועדה', 'שם טופס', 'סניף הוועדה', 'שם המבוטח', 'ת.ז:', 
-        'תאריך פגיעה(רק באיבה,נכות מעבודה)', 'משתתפי הועדה', 'תקופה', 'אבחנה', 
-        'סעיף ליקוי', 'אחוז הנכות הנובע מהפגיעה', 'הערות', 'מתאריך', 'עד תאריך', 
+        'מס"ד', 'שם קובץ', 'כותרת הועדה', 'סוג ועדה', 'שם טופס', 'סניף הוועדה', 'שם המבוטח', 'ת.ז:', 
+        'תאריך ועדה', 'תאריך פגיעה', 'משתתפי הועדה', 'מתקופה', 'תקופה', 'אבחנה', 
+        'סעיף ליקוי', 'אחוז הנכות', 'אחוז הנכות הנובע מהפגיעה', 'הערות', 'מתאריך', 'עד תאריך', 
         'מידת הנכות', 'אחוז הנכות משוקלל', 'שקלול לפטור ממס', 'סטטוס'
       ]
     ];
@@ -63,16 +63,20 @@ export class ExcelExporter {
         summaryData.push([
           rowNumber,
           doc.fileName || '-',
+          getFieldValue(doc, "כותרת הועדה"),
           getFieldValue(doc, "סוג ועדה"),
           getFieldValue(doc, "שם טופס"),
           getFieldValue(doc, "סניף הוועדה"),
           getFieldValue(doc, "שם המבוטח"),
           getFieldValue(doc, "ת.ז:"),
+          getFieldValue(doc, "תאריך ועדה"),
           getFieldValue(doc, "תאריך פגיעה(רק באיבה,נכות מעבודה)"),
           getFieldValue(doc, "משתתפי הועדה"),
+          getFieldValue(doc, "מתקופה"),
           getFieldValue(doc, "תקופה"),
           diagnosis,
           getFieldValue(doc, "סעיף ליקוי"),
+          getFieldValue(doc, "אחוז הנכות"),
           getFieldValue(doc, "אחוז הנכות הנובע מהפגיעה"),
           getFieldValue(doc, "הערות"),
           getFieldValue(doc, "מתאריך"),
@@ -92,16 +96,20 @@ export class ExcelExporter {
     summarySheet['!cols'] = [
       { wch: 6 },   // מס"ד
       { wch: 25 },  // שם הקובץ
+      { wch: 30 },  // כותרת הועדה
       { wch: 15 },  // סוג ועדה
       { wch: 15 },  // שם טופס
       { wch: 15 },  // סניף הוועדה
       { wch: 20 },  // שם המבוטח
       { wch: 12 },  // ת.ז:
-      { wch: 20 },  // תאריך פגיעה(רק באיבה,נכות מעבודה)
+      { wch: 15 },  // תאריך ועדה
+      { wch: 15 },  // תאריך פגיעה
       { wch: 15 },  // משתתפי הועדה
+      { wch: 12 },  // מתקופה
       { wch: 12 },  // תקופה
-      { wch: 15 },  // אבחנה
+      { wch: 20 },  // אבחנה
       { wch: 15 },  // סעיף ליקוי
+      { wch: 15 },  // אחוז הנכות
       { wch: 20 },  // אחוז הנכות הנובע מהפגיעה
       { wch: 15 },  // הערות
       { wch: 12 },  // מתאריך
@@ -118,9 +126,9 @@ export class ExcelExporter {
   private static createConsolidatedSheet(workbook: XLSX.WorkBook, documents: ProcessedDocument[]): void {
     const consolidatedData = [
       [
-        'מס"ד', 'שם קובץ', 'שם המבוטח', 'ת.ז:', 'סוג ועדה', 'שם טופס', 
-        'סניף הוועדה', 'תאריך פגיעה', 'אבחנה', 'סעיף ליקוי', 
-        'אחוז נכות', 'תקופה', 'מתאריך', 'עד תאריך', 'מידת הנכות',
+        'מס"ד', 'שם קובץ', 'כותרת הועדה', 'שם המבוטח', 'ת.ז:', 'סוג ועדה', 'שם טופס', 
+        'סניף הוועדה', 'תאריך ועדה', 'תאריך פגיעה', 'אבחנה', 'סעיף ליקוי', 
+        'אחוז נכות', 'מתקופה', 'תקופה', 'מתאריך', 'עד תאריך', 'מידת הנכות',
         'אחוז נכות משוקלל', 'שקלול לפטור ממס', 'משתתפי הועדה', 'הערות', 'סטטוס'
       ]
     ];
@@ -174,15 +182,18 @@ export class ExcelExporter {
     consolidatedSheet['!cols'] = [
       { wch: 6 },   // מס"ד
       { wch: 20 },  // שם הקובץ
+      { wch: 30 },  // כותרת הועדה
       { wch: 20 },  // שם המבוטח
       { wch: 12 },  // ת.ז:
       { wch: 15 },  // סוג ועדה
       { wch: 15 },  // שם טופס
       { wch: 15 },  // סניף הוועדה
+      { wch: 15 },  // תאריך ועדה
       { wch: 15 },  // תאריך פגיעה
       { wch: 25 },  // אבחנה
       { wch: 15 },  // סעיף ליקוי
       { wch: 12 },  // אחוז נכות
+      { wch: 12 },  // מתקופה
       { wch: 15 },  // תקופה
       { wch: 12 },  // מתאריך
       { wch: 12 },  // עד תאריך
@@ -210,16 +221,20 @@ export class ExcelExporter {
     const mainData = [
       ['שדה', 'ערך'],
       ['שם הקובץ', doc.fileName || 'לא ידוע'],
+      ['כותרת הועדה', getFieldValue("כותרת הועדה")],
       ['סוג ועדה', getFieldValue("סוג ועדה")],
       ['שם טופס', getFieldValue("שם טופס")],
       ['סניף הוועדה', getFieldValue("סניף הוועדה")],
       ['שם המבוטח', getFieldValue("שם המבוטח")],
       ['ת.ז:', getFieldValue("ת.ז:")],
+      ['תאריך ועדה', getFieldValue("תאריך ועדה")],
       ['תאריך פגיעה(רק באיבה,נכות מעבודה)', getFieldValue("תאריך פגיעה(רק באיבה,נכות מעבודה)")],
       ['משתתפי הועדה', getFieldValue("משתתפי הועדה")],
+      ['מתקופה', getFieldValue("מתקופה")],
       ['תקופה', getFieldValue("תקופה")],
       ['אבחנה', getFieldValue("אבחנה")],
       ['סעיף ליקוי', getFieldValue("סעיף ליקוי")],
+      ['אחוז הנכות', getFieldValue("אחוז הנכות")],
       ['אחוז הנכות הנובע מהפגיעה', getFieldValue("אחוז הנכות הנובע מהפגיעה")],
       ['הערות', getFieldValue("הערות")],
       ['מתאריך', getFieldValue("מתאריך")],

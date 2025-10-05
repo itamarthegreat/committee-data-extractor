@@ -24,16 +24,20 @@ export interface DisabilityWeightRow {
 
 export interface ProcessedDocument {
   fileName: string;
+  "כותרת הועדה": string | null;
   "סוג ועדה": string | null;
   "שם טופס": string | null;
   "סניף הוועדה": string | null;
   "שם המבוטח": string | null;
   "ת.ז:": string | null;
+  "תאריך ועדה": string | null;
   "תאריך פגיעה(רק באיבה,נכות מעבודה)": string | null;
   "משתתפי הועדה": string | null;
+  "מתקופה": string | null;
   "תקופה": string | null;
   "אבחנה": string | null;
   "סעיף ליקוי": string | null;
+  "אחוז הנכות": string | null;
   "אחוז הנכות הנובע מהפגיעה": string | null;
   "הערות": string | null;
   "מתאריך": string | null;
