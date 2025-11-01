@@ -28,7 +28,7 @@ serve(async (req) => {
     console.log(`Processing text for ${fileName}: ${text.length} characters`);
 
     const cleanedText = cleanHebrewText(text);
-    const maxLength = 15000;
+    const maxLength = 25000; // Increased to capture final summary sentence
     const truncatedText = cleanedText.length > maxLength ? cleanedText.substring(0, maxLength) + '...' : cleanedText;
     
     const readableRatio = calculateReadableRatio(truncatedText);
@@ -47,7 +47,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -85,8 +85,18 @@ serve(async (req) => {
 function createEnhancedExtractionPrompt(text: string): string {
   return `אתה מומחה בחילוץ מידע ממסמכי ועדות רפואיות של ביטוח לאומי ומס הכנסה בעברית.
 
+**⚠️ חובה לקרוא! כלל קריטי לאחוזי נכות:**
+אם אתה רואה במסמך משפט כמו:
+"מ- XX/XX/XXXX ואילך נקבעה לך נכות קבועה של XX.XX%"
+"נקבעה לך נכות צמיתה של XX%"
+"נקבעה לך נכות זמנית של XX%"
+
+→ **זהו האחוז האמיתי והסופי! השתמש רק בו!**
+→ **התעלם מכל טבלה אחרת עם אחוזי נכות!**
+→ משפט זה נמצא בדרך כלל בעמוד האחרון או לפני האחרון.
+
 **כללים קריטיים:**
-1. חפש בכל העמודים - לא רק בעמודים פנימיים
+1. חפש בכל העמודים - במיוחד העמודים האחרונים!
 2. כל שדה חייב להתבסס על מידע מדויק מהמסמך - לא להמציא כלום!
 3. אם המידע לא נמצא במסמך - החזר null במקום לנחש
 4. שים לב למידע בכותרות ובתחילת המסמך
