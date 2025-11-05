@@ -53,7 +53,14 @@ serve(async (req) => {
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error('OpenAI API error:', response.status, errorText);
+      
+      if (response.status === 429) {
+        throw new Error('הגעת למגבלת הקצב של OpenAI. אנא המתן מספר דקות לפני ניסיון נוסף.');
+      }
+      
+      throw new Error(`שגיאה ב-OpenAI: ${response.status}`);
     }
 
     const data = await response.json();
