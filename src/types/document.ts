@@ -32,7 +32,10 @@ export interface ProcessedDocument {
   "ת.ז:": string | null;
   "תאריך ועדה": string | null;
   "תאריך פגיעה(רק באיבה,נכות מעבודה)": string | null;
-  "משתתפי הועדה": string | null;
+  "משתתף ועדה 1": string | null;
+  "משתתף ועדה 2": string | null;
+  "משתתף ועדה 3": string | null;
+  "משתתף ועדה 4": string | null;
   "אבחנה": string | null;
   "סעיף ליקוי": string | null;
   "אחוז הנכות": string | null;
