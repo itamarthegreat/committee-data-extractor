@@ -13,10 +13,10 @@ serve(async (req) => {
   }
 
   try {
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
 
-    if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    if (!openaiApiKey) {
+      throw new Error('OPENAI_API_KEY not configured');
     }
 
     const { text, fileName } = await req.json();
@@ -40,36 +40,40 @@ serve(async (req) => {
     
     const prompt = createEnhancedExtractionPrompt(truncatedText);
     
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
+        'Authorization': `Bearer ${openaiApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-pro',
+        model: 'gpt-4o-mini',
         messages: [
-          { role: "system", content: "אתה מומחה בחילוץ מידע ממסמכי ועדות רפואיות של הביטוח הלאומי. עליך לחלץ את כל המידע בצורה מדויקת ומלאה, במיוחד את כל ההחלטות מטבלת 'קביעת אחוזים רפואיים'. **חשוב מאוד: אל תעצור באמצע! חלץ את כל 10-15 ההחלטות מהטבלה!**" },
+          { 
+            role: "system", 
+            content: "You are an expert at extracting information from Hebrew medical committee documents. You MUST extract ALL rows from the table titled 'קביעת אחוזים רפואיים'. Count the rows first, then extract them all. DO NOT stop after 5 rows - there are usually 10-15 rows. Extract EVERY SINGLE ROW."
+          },
           { role: "user", content: prompt }
         ],
-        temperature: 0.1,
+        temperature: 0,
+        max_tokens: 16000,
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Lovable AI Gateway error:', response.status, errorText);
-      throw new Error(`Lovable AI Gateway error: ${response.status}`);
+      console.error('OpenAI API error:', response.status, errorText);
+      throw new Error(`OpenAI API error: ${response.status}`);
     }
 
     const data = await response.json();
     const content = data.choices[0].message.content;
     
     if (!content) {
-      throw new Error('Lovable AI returned empty response');
+      throw new Error('OpenAI returned empty response');
     }
 
-    console.log('Lovable AI raw response content:', content);
+    console.log('OpenAI raw response content:', content);
 
     const result = parseOpenAIResponse(content);
     
