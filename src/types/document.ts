@@ -9,10 +9,13 @@ export interface Diagnosis {
 }
 
 export interface DecisionRow {
-  item: string;
-  decision: string;
-  percentage?: number;
-  notes?: string;
+  "אבחנה": string | null;
+  "סעיף ליקוי": string | null;
+  "אחוז הנכות": string | null;
+  "מתאריך": string | null;
+  "עד תאריך": string | null;
+  "מידת הנכות": string | null;
+  "הערות": string | null;
 }
 
 export interface DisabilityWeightRow {
@@ -36,14 +39,8 @@ export interface ProcessedDocument {
   "משתתף ועדה 2": string | null;
   "משתתף ועדה 3": string | null;
   "משתתף ועדה 4": string | null;
-  "אבחנה": string | null;
-  "סעיף ליקוי": string | null;
-  "אחוז הנכות": string | null;
+  "החלטות": DecisionRow[] | null;
   "אחוז הנכות הנובע מהפגיעה": string | null;
-  "הערות": string | null;
-  "מתאריך": string | null;
-  "עד תאריך": string | null;
-  "מידת הנכות": string | null;
   "אחוז הנכות משוקלל": string | null;
   "שקלול לפטור ממס": string | null;
   processingStatus: 'pending' | 'processing' | 'completed' | 'error';

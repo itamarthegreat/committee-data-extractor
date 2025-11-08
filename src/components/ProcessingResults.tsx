@@ -94,17 +94,38 @@ const ProcessingResults = ({ results, isProcessing, filesCount }: ProcessingResu
       ['משתתף ועדה 2', doc["משתתף ועדה 2"] || 'לא זוהה'],
       ['משתתף ועדה 3', doc["משתתף ועדה 3"] || 'לא זוהה'],
       ['משתתף ועדה 4', doc["משתתף ועדה 4"] || 'לא זוהה'],
-      ['תקופה', doc["תקופה"] || 'לא צוינה'],
-      ['אבחנה', doc["אבחנה"] || 'לא צוינה'],
-      ['סעיף ליקוי', doc["סעיף ליקוי"] || 'לא צוין'],
       ['אחוז הנכות הנובע מהפגיעה', doc["אחוז הנכות הנובע מהפגיעה"] || 'לא צוין'],
-      ['הערות', doc["הערות"] || 'אין'],
-      ['מתאריך', doc["מתאריך"] || 'לא צוין'],
-      ['עד תאריך', doc["עד תאריך"] || 'לא צוין'],
-      ['מידת הנכות', doc["מידת הנכות"] || 'לא צוינה'],
       ['אחוז הנכות משוקלל', doc["אחוז הנכות משוקלל"] || 'לא צוין'],
       ['שקלול לפטור ממס', doc["שקלול לפטור ממס"] || 'לא צוין']
     ];
+    
+    // Add decisions table if exists
+    if (doc["החלטות"] && Array.isArray(doc["החלטות"]) && doc["החלטות"].length > 0) {
+      docData.push(['', '']); // Empty row
+      docData.push(['החלטות:', '']);
+      docData.push(['', '']); // Empty row
+      
+      // Add header for decisions table
+      const decisionsSheet = [
+        ['מס"ד', 'אבחנה', 'סעיף ליקוי', 'אחוז נכות', 'מתאריך', 'עד תאריך', 'מידת הנכות', 'הערות']
+      ];
+      
+      doc["החלטות"].forEach((decision, idx) => {
+        decisionsSheet.push([
+          (idx + 1).toString(),
+          decision["אבחנה"] || '-',
+          decision["סעיף ליקוי"] || '-',
+          decision["אחוז הנכות"] || '-',
+          decision["מתאריך"] || '-',
+          decision["עד תאריך"] || '-',
+          decision["מידת הנכות"] || '-',
+          decision["הערות"] || '-'
+        ]);
+      });
+      
+      const decisionsSheetObj = XLSX.utils.aoa_to_sheet(decisionsSheet);
+      XLSX.utils.book_append_sheet(workbook, decisionsSheetObj, 'החלטות');
+    }
     
     const docSheet = XLSX.utils.aoa_to_sheet(docData);
     XLSX.utils.book_append_sheet(workbook, docSheet, 'פרטי מסמך');

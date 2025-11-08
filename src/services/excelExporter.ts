@@ -50,15 +50,14 @@ export class ExcelExporter {
       return value && value.trim() !== '' ? value : '-';
     };
 
-    // Process each document and create separate rows for each diagnosis
+    // Process each document and create separate rows for each decision
     documents.forEach((doc, docIndex) => {
-      const diagnosisField = getFieldValue(doc, "אבחנה");
-      const diagnoses = diagnosisField !== '-' ? 
-        diagnosisField.split(/[,،;؛]/).map(d => d.trim()).filter(d => d.length > 0) : 
-        ['-'];
+      const decisions = doc["החלטות"] && Array.isArray(doc["החלטות"]) && doc["החלטות"].length > 0
+        ? doc["החלטות"]
+        : [{ "אבחנה": "-", "סעיף ליקוי": "-", "אחוז הנכות": "-", "מתאריך": "-", "עד תאריך": "-", "מידת הנכות": "-", "הערות": "-" }];
       
-      diagnoses.forEach((diagnosis, diagnosisIndex) => {
-        const rowNumber = diagnosisIndex === 0 ? (docIndex + 1).toString() : `${docIndex + 1}.${diagnosisIndex + 1}`;
+      decisions.forEach((decision, decisionIndex) => {
+        const rowNumber = decisionIndex === 0 ? (docIndex + 1).toString() : `${docIndex + 1}.${decisionIndex + 1}`;
         
         summaryData.push([
           rowNumber,
@@ -75,14 +74,14 @@ export class ExcelExporter {
           getFieldValue(doc, "משתתף ועדה 2"),
           getFieldValue(doc, "משתתף ועדה 3"),
           getFieldValue(doc, "משתתף ועדה 4"),
-          diagnosis,
-          getFieldValue(doc, "סעיף ליקוי"),
-          getFieldValue(doc, "אחוז הנכות"),
+          decision["אבחנה"] || '-',
+          decision["סעיף ליקוי"] || '-',
+          decision["אחוז הנכות"] || '-',
           getFieldValue(doc, "אחוז הנכות הנובע מהפגיעה"),
-          getFieldValue(doc, "הערות"),
-          getFieldValue(doc, "מתאריך"),
-          getFieldValue(doc, "עד תאריך"),
-          getFieldValue(doc, "מידת הנכות"),
+          decision["הערות"] || '-',
+          decision["מתאריך"] || '-',
+          decision["עד תאריך"] || '-',
+          decision["מידת הנכות"] || '-',
           getFieldValue(doc, "אחוז הנכות משוקלל"),
           getFieldValue(doc, "שקלול לפטור ממס"),
           doc.processingStatus === 'completed' ? '✓ הושלם' : 
@@ -129,9 +128,8 @@ export class ExcelExporter {
     const consolidatedData = [
       [
         'מס"ד', 'שם קובץ', 'כותרת הועדה', 'שם המבוטח', 'ת.ז:', 'סוג ועדה', 'שם טופס', 
-        'סניף הוועדה', 'תאריך ועדה', 'תאריך פגיעה', 'משתתף ועדה 1', 'משתתף ועדה 2', 
-        'משתתף ועדה 3', 'משתתף ועדה 4', 'אבחנה', 'סעיף ליקוי', 
-        'אחוז נכות', 'מתאריך', 'עד תאריך', 'מידת הנכות',
+        'סניף הוועדה', 'תאריך ועדה', 'תאריך פגיעה', 'משתתפי הוועדה', 
+        'אבחנה', 'סעיף ליקוי', 'אחוז נכות', 'מתאריך', 'עד תאריך', 'מידת הנכות',
         'אחוז נכות משוקלל', 'שקלול לפטור ממס', 'הערות', 'סטטוס'
       ]
     ];
@@ -193,10 +191,7 @@ export class ExcelExporter {
       { wch: 15 },  // סניף הוועדה
       { wch: 15 },  // תאריך ועדה
       { wch: 15 },  // תאריך פגיעה
-      { wch: 25 },  // משתתף ועדה 1
-      { wch: 25 },  // משתתף ועדה 2
-      { wch: 25 },  // משתתף ועדה 3
-      { wch: 25 },  // משתתף ועדה 4
+      { wch: 35 },  // משתתפי הוועדה
       { wch: 25 },  // אבחנה
       { wch: 15 },  // סעיף ליקוי
       { wch: 12 },  // אחוז נכות
@@ -209,7 +204,7 @@ export class ExcelExporter {
       { wch: 15 }   // סטטוס
     ];
     
-    XLSX.utils.book_append_sheet(workbook, consolidatedSheet, 'כולם ביחד - אבחנות');
+    XLSX.utils.book_append_sheet(workbook, consolidatedSheet, 'כולם ביחד - החלטות');
   }
   
   private static createEnhancedDocumentSheets(workbook: XLSX.WorkBook, doc: ProcessedDocument, index: number): void {
@@ -237,32 +232,28 @@ export class ExcelExporter {
       ['משתתף ועדה 2', getFieldValue("משתתף ועדה 2")],
       ['משתתף ועדה 3', getFieldValue("משתתף ועדה 3")],
       ['משתתף ועדה 4', getFieldValue("משתתף ועדה 4")],
-      ['מתקופה', getFieldValue("מתקופה")],
-      ['תקופה', getFieldValue("תקופה")],
-      ['אבחנה', getFieldValue("אבחנה")],
-      ['סעיף ליקוי', getFieldValue("סעיף ליקוי")],
-      ['אחוז הנכות', getFieldValue("אחוז הנכות")],
       ['אחוז הנכות הנובע מהפגיעה', getFieldValue("אחוז הנכות הנובע מהפגיעה")],
-      ['הערות', getFieldValue("הערות")],
-      ['מתאריך', getFieldValue("מתאריך")],
-      ['עד תאריך', getFieldValue("עד תאריך")],
-      ['מידת הנכות', getFieldValue("מידת הנכות")],
       ['אחוז הנכות משוקלל', getFieldValue("אחוז הנכות משוקלל")],
       ['שקלול לפטור ממס', getFieldValue("שקלול לפטור ממס")],
       ['סטטוס עיבוד', doc.processingStatus === 'completed' ? '✓ הושלם בהצלחה' : 
                       doc.processingStatus === 'error' ? `✗ שגיאה: ${doc.errorMessage || 'לא ידוע'}` : '⏳ בעיבוד']
     ];
     
-    // Add diagnosis breakdown if multiple diagnoses exist
-    const diagnosisField = getFieldValue("אבחנה");
-    if (diagnosisField !== 'לא זוהה' && diagnosisField.includes(',')) {
-      const diagnoses = diagnosisField.split(/[,،;؛]/).map(d => d.trim()).filter(d => d.length > 0);
-      
+    // Add decisions breakdown if decisions exist
+    const decisions = doc["החלטות"];
+    if (decisions && Array.isArray(decisions) && decisions.length > 0) {
       mainData.push(['', '']); // Empty row separator
-      mainData.push(['פירוט אבחנות:', '']);
+      mainData.push(['פירוט החלטות:', '']);
       
-      diagnoses.forEach((diagnosis, index) => {
-        mainData.push([`אבחנה ${index + 1}`, diagnosis]);
+      decisions.forEach((decision, index) => {
+        mainData.push([`החלטה ${index + 1}:`, '']);
+        mainData.push(['  אבחנה', decision["אבחנה"] || 'לא זוהה']);
+        mainData.push(['  סעיף ליקוי', decision["סעיף ליקוי"] || 'לא זוהה']);
+        mainData.push(['  אחוז הנכות', decision["אחוז הנכות"] || 'לא זוהה']);
+        mainData.push(['  מתאריך', decision["מתאריך"] || 'לא זוהה']);
+        mainData.push(['  עד תאריך', decision["עד תאריך"] || 'לא זוהה']);
+        mainData.push(['  מידת הנכות', decision["מידת הנכות"] || 'לא זוהה']);
+        mainData.push(['  הערות', decision["הערות"] || 'לא זוהה']);
       });
     }
     
