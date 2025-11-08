@@ -13,10 +13,10 @@ serve(async (req) => {
   }
 
   try {
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
 
-    if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    if (!openaiApiKey) {
+      throw new Error('OPENAI_API_KEY not configured');
     }
 
     const { text, fileName } = await req.json();
@@ -40,38 +40,29 @@ serve(async (req) => {
     
     const prompt = createEnhancedExtractionPrompt(truncatedText);
     
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
+        'Authorization': `Bearer ${openaiApiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: 'gpt-4o-mini',
         messages: [{ role: "user", content: prompt }],
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Lovable AI error:', response.status, errorText);
-      
-      if (response.status === 429) {
-        throw new Error('הגעת למגבלת הקצב. אנא המתן מספר דקות לפני ניסיון נוסף.');
-      }
-      
-      if (response.status === 402) {
-        throw new Error('יש להוסיף קרדיטים ל-Lovable AI. פנה למנהל המערכת.');
-      }
-      
-      throw new Error(`שגיאה ב-Lovable AI: ${response.status}`);
+      console.error('OpenAI API error:', response.status, errorText);
+      throw new Error(`OpenAI API error: ${response.status}`);
     }
 
     const data = await response.json();
     const content = data.choices[0].message.content;
     
     if (!content) {
-      throw new Error('Lovable AI returned empty response');
+      throw new Error('OpenAI returned empty response');
     }
 
     const result = parseOpenAIResponse(content);
