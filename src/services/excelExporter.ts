@@ -3,6 +3,25 @@ import { ProcessedDocument } from '@/types/document';
 
 export class ExcelExporter {
   
+  // Generate distinct colors for each patient
+  private static getPatientColor(index: number): string {
+    const colors = [
+      'FFE3F2FD', // Light Blue
+      'FFF3E5F5', // Light Purple
+      'FFE8F5E9', // Light Green
+      'FFFFF3E0', // Light Orange
+      'FFFCE4EC', // Light Pink
+      'FFE0F2F1', // Light Teal
+      'FFFFF9C4', // Light Yellow
+      'FFE1F5FE', // Lighter Blue
+      'FFF1F8E9', // Lighter Green
+      'FFFFF8E1', // Lighter Amber
+      'FFF3E5AB', // Light Khaki
+      'FFE8EAF6', // Light Indigo
+    ];
+    return colors[index % colors.length];
+  }
+  
   static exportToExcel(documents: ProcessedDocument[]): void {
     if (documents.length === 0) {
       console.warn('No documents to export');
@@ -29,7 +48,7 @@ export class ExcelExporter {
     // Save file with timestamp
     const timestamp = new Date().toISOString().slice(0, 16).replace('T', '_').replace(/:/g, '-');
     const fileName = `ועדות_רפואיות_${timestamp}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+    XLSX.writeFile(workbook, fileName, { cellStyles: true });
     
     console.log(`Excel file exported: ${fileName}`);
   }
@@ -91,6 +110,35 @@ export class ExcelExporter {
     });
     
     const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
+    
+    // Apply colors to patient rows
+    let currentRow = 1; // Start after header
+    documents.forEach((doc, docIndex) => {
+      const decisions = doc["החלטות"] && Array.isArray(doc["החלטות"]) && doc["החלטות"].length > 0
+        ? doc["החלטות"]
+        : [{}];
+      
+      const patientColor = this.getPatientColor(docIndex);
+      
+      decisions.forEach(() => {
+        // Apply color to all cells in this row
+        for (let col = 0; col < 25; col++) {
+          const cellAddress = XLSX.utils.encode_cell({ r: currentRow, c: col });
+          if (!summarySheet[cellAddress]) continue;
+          
+          summarySheet[cellAddress].s = {
+            fill: {
+              fgColor: { rgb: patientColor }
+            },
+            alignment: {
+              horizontal: 'right',
+              vertical: 'center'
+            }
+          };
+        }
+        currentRow++;
+      });
+    });
     
     // Set column widths for better readability
     summarySheet['!cols'] = [
@@ -178,6 +226,36 @@ export class ExcelExporter {
     });
     
     const consolidatedSheet = XLSX.utils.aoa_to_sheet(consolidatedData);
+    
+    // Apply colors to patient rows in consolidated sheet
+    let currentRow = 1; // Start after header
+    documents.forEach((doc, docIndex) => {
+      const diagnosisField = getFieldValue(doc, "אבחנה");
+      const diagnoses = diagnosisField !== '-' ? 
+        diagnosisField.split(/[,،;؛]/).map(d => d.trim()).filter(d => d.length > 0) : 
+        ['-'];
+      
+      const patientColor = this.getPatientColor(docIndex);
+      
+      diagnoses.forEach(() => {
+        // Apply color to all cells in this row
+        for (let col = 0; col < 21; col++) {
+          const cellAddress = XLSX.utils.encode_cell({ r: currentRow, c: col });
+          if (!consolidatedSheet[cellAddress]) continue;
+          
+          consolidatedSheet[cellAddress].s = {
+            fill: {
+              fgColor: { rgb: patientColor }
+            },
+            alignment: {
+              horizontal: 'right',
+              vertical: 'center'
+            }
+          };
+        }
+        currentRow++;
+      });
+    });
     
     // Set column widths for better readability
     consolidatedSheet['!cols'] = [
