@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import { ProcessedDocument } from '@/types/document';
 
 export class ExcelExporter {
@@ -48,7 +48,7 @@ export class ExcelExporter {
     // Save file with timestamp
     const timestamp = new Date().toISOString().slice(0, 16).replace('T', '_').replace(/:/g, '-');
     const fileName = `ועדות_רפואיות_${timestamp}.xlsx`;
-    XLSX.writeFile(workbook, fileName, { cellStyles: true });
+    XLSX.writeFile(workbook, fileName);
     
     console.log(`Excel file exported: ${fileName}`);
   }
@@ -111,7 +111,7 @@ export class ExcelExporter {
     
     const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
     
-    // Apply colors to patient rows
+    // Apply colors and styles to patient rows
     let currentRow = 1; // Start after header
     documents.forEach((doc, docIndex) => {
       const decisions = doc["החלטות"] && Array.isArray(doc["החלטות"]) && doc["החלטות"].length > 0
@@ -121,10 +121,12 @@ export class ExcelExporter {
       const patientColor = this.getPatientColor(docIndex);
       
       decisions.forEach(() => {
-        // Apply color to all cells in this row
+        // Apply color and style to all cells in this row
         for (let col = 0; col < 25; col++) {
           const cellAddress = XLSX.utils.encode_cell({ r: currentRow, c: col });
-          if (!summarySheet[cellAddress]) continue;
+          if (!summarySheet[cellAddress]) {
+            summarySheet[cellAddress] = { t: 's', v: '' };
+          }
           
           summarySheet[cellAddress].s = {
             fill: {
@@ -132,13 +134,47 @@ export class ExcelExporter {
             },
             alignment: {
               horizontal: 'right',
-              vertical: 'center'
+              vertical: 'center',
+              wrapText: true
+            },
+            border: {
+              top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              right: { style: 'thin', color: { rgb: 'CCCCCC' } }
             }
           };
         }
         currentRow++;
       });
     });
+    
+    // Style header row
+    for (let col = 0; col < 25; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+      if (summarySheet[cellAddress]) {
+        summarySheet[cellAddress].s = {
+          fill: {
+            fgColor: { rgb: '4472C4' }
+          },
+          font: {
+            bold: true,
+            color: { rgb: 'FFFFFF' }
+          },
+          alignment: {
+            horizontal: 'center',
+            vertical: 'center',
+            wrapText: true
+          },
+          border: {
+            top: { style: 'thin', color: { rgb: '000000' } },
+            bottom: { style: 'thin', color: { rgb: '000000' } },
+            left: { style: 'thin', color: { rgb: '000000' } },
+            right: { style: 'thin', color: { rgb: '000000' } }
+          }
+        };
+      }
+    }
     
     // Set column widths for better readability
     summarySheet['!cols'] = [
@@ -227,7 +263,7 @@ export class ExcelExporter {
     
     const consolidatedSheet = XLSX.utils.aoa_to_sheet(consolidatedData);
     
-    // Apply colors to patient rows in consolidated sheet
+    // Apply colors and styles to patient rows in consolidated sheet
     let currentRow = 1; // Start after header
     documents.forEach((doc, docIndex) => {
       const diagnosisField = getFieldValue(doc, "אבחנה");
@@ -238,10 +274,12 @@ export class ExcelExporter {
       const patientColor = this.getPatientColor(docIndex);
       
       diagnoses.forEach(() => {
-        // Apply color to all cells in this row
+        // Apply color and style to all cells in this row
         for (let col = 0; col < 21; col++) {
           const cellAddress = XLSX.utils.encode_cell({ r: currentRow, c: col });
-          if (!consolidatedSheet[cellAddress]) continue;
+          if (!consolidatedSheet[cellAddress]) {
+            consolidatedSheet[cellAddress] = { t: 's', v: '' };
+          }
           
           consolidatedSheet[cellAddress].s = {
             fill: {
@@ -249,13 +287,47 @@ export class ExcelExporter {
             },
             alignment: {
               horizontal: 'right',
-              vertical: 'center'
+              vertical: 'center',
+              wrapText: true
+            },
+            border: {
+              top: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              bottom: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              left: { style: 'thin', color: { rgb: 'CCCCCC' } },
+              right: { style: 'thin', color: { rgb: 'CCCCCC' } }
             }
           };
         }
         currentRow++;
       });
     });
+    
+    // Style header row
+    for (let col = 0; col < 21; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+      if (consolidatedSheet[cellAddress]) {
+        consolidatedSheet[cellAddress].s = {
+          fill: {
+            fgColor: { rgb: '4472C4' }
+          },
+          font: {
+            bold: true,
+            color: { rgb: 'FFFFFF' }
+          },
+          alignment: {
+            horizontal: 'center',
+            vertical: 'center',
+            wrapText: true
+          },
+          border: {
+            top: { style: 'thin', color: { rgb: '000000' } },
+            bottom: { style: 'thin', color: { rgb: '000000' } },
+            left: { style: 'thin', color: { rgb: '000000' } },
+            right: { style: 'thin', color: { rgb: '000000' } }
+          }
+        };
+      }
+    }
     
     // Set column widths for better readability
     consolidatedSheet['!cols'] = [
