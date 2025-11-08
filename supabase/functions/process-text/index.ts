@@ -405,6 +405,10 @@ function parseOpenAIResponse(content: string): any {
       "ת.ז:": "ת.ז:",
       "תאריך ועדה": "תאריך ועדה",
       "תאריך פגיעה(רק באיבה,נכות מעבודה)": "תאריך פגיעה(רק באיבה,נכות מעבודה)",
+      "משתתף ועדה 1": "משתתף ועדה 1",
+      "משתתף ועדה 2": "משתתף ועדה 2",
+      "משתתף ועדה 3": "משתתף ועדה 3",
+      "משתתף ועדה 4": "משתתף ועדה 4",
       "משתתפי הועדה": "משתתפי הועדה",
       "אבחנה": "אבחנה",
       "סעיף ליקוי": "סעיף ליקוי",
@@ -424,6 +428,11 @@ function parseOpenAIResponse(content: string): any {
         result[field] = value;
       }
     });
+    
+    // Handle "החלטות" separately - keep it as an array
+    if (extractedData.hasOwnProperty("החלטות") && Array.isArray(extractedData["החלטות"])) {
+      result["החלטות"] = extractedData["החלטות"];
+    }
     
     return result;
     
