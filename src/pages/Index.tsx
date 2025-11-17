@@ -58,7 +58,49 @@ const Index = () => {
     }
   };
 
-  const exportAllToExcel = () => {
+  const sendExportNotification = async (documents: ProcessedDocument[]) => {
+    const webhookUrl = "https://25ddcab8efd846c887ba8300533a77.72.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/1eda0255165a4bc68febce2c8ad7ef97/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=BWfq5jArj34ke1b_iH4Nt4XQCRVzXQ_XkTGVQZZ5haQ";
+    
+    const payload = {
+      exportDate: new Date().toISOString(),
+      totalDocuments: documents.length,
+      documents: documents.map(doc => ({
+        caseNumber: doc["ת.ז:"] || "לא זמין", // מספר התיק - משתמש בת.ז כמזהה
+        fileName: doc.fileName,
+        patientName: doc["שם המבוטח"],
+        idNumber: doc["ת.ז:"],
+        committeeType: doc["סוג ועדה"],
+        committeeDate: doc["תאריך ועדה"],
+        committeeBranch: doc["סניף הוועדה"],
+        injuryDate: doc["תאריך פגיעה(רק באיבה,נכות מעבודה)"],
+        decisions: doc["החלטות"] || [],
+        totalDisabilityPercentage: doc["אחוז הנכות הנובע מהפגיעה"],
+        weightedDisabilityPercentage: doc["אחוז הנכות משוקלל"],
+        taxExemptionWeighting: doc["שקלול לפטור ממס"],
+        processingStatus: doc.processingStatus
+      }))
+    };
+
+    try {
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        console.error('Failed to send notification:', response.statusText);
+      } else {
+        console.log('Export notification sent successfully');
+      }
+    } catch (error) {
+      console.error('Error sending export notification:', error);
+    }
+  };
+
+  const exportAllToExcel = async () => {
     if (results.length === 0) return;
     
     const successfulResults = results.filter(r => r.processingStatus === 'completed');
@@ -72,6 +114,9 @@ const Index = () => {
     }, 0);
     
     ExcelExporter.exportToExcel(results);
+    
+    // שליחת הודעה עם הנתונים
+    await sendExportNotification(results);
     
     toast({
       title: "יוצא לאקסל בהצלחה!",
