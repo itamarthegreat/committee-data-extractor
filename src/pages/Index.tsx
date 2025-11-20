@@ -41,6 +41,9 @@ const Index = () => {
       const successCount = processedResults.filter(r => r.processingStatus === 'completed').length;
       const errorCount = processedResults.filter(r => r.processingStatus === 'error').length;
       
+      // שלח הודעה לאחר עיבוד מוצלח
+      await sendExportNotification(processedResults);
+      
       toast({
         title: "עיבוד הושלם",
         description: `עובדו בהצלחה: ${successCount}, שגיאות: ${errorCount}`,
@@ -114,9 +117,6 @@ const Index = () => {
     }, 0);
     
     ExcelExporter.exportToExcel(results);
-    
-    // שליחת הודעה עם הנתונים
-    await sendExportNotification(results);
     
     toast({
       title: "יוצא לאקסל בהצלחה!",
