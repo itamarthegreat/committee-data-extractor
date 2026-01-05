@@ -8,21 +8,20 @@ const corsHeaders = {
 
 interface ProcessedDocument {
   fileName: string;
+  "כותרת הועדה": string | null;
   "סוג ועדה": string | null;
   "שם טופס": string | null;
   "סניף הוועדה": string | null;
   "שם המבוטח": string | null;
   "ת.ז:": string | null;
+  "תאריך ועדה": string | null;
   "תאריך פגיעה(רק באיבה,נכות מעבודה)": string | null;
-  "משתתפי הועדה": string | null;
-  "תקופה": string | null;
-  "אבחנה": string | null;
-  "סעיף ליקוי": string | null;
+  "משתתף ועדה 1": string | null;
+  "משתתף ועדה 2": string | null;
+  "משתתף ועדה 3": string | null;
+  "משתתף ועדה 4": string | null;
+  "החלטות": any[] | null;
   "אחוז הנכות הנובע מהפגיעה": string | null;
-  "הערות": string | null;
-  "מתאריך": string | null;
-  "עד תאריך": string | null;
-  "מידת הנכות": string | null;
   "אחוז הנכות משוקלל": string | null;
   "שקלול לפטור ממס": string | null;
   processingStatus: 'completed' | 'error';
@@ -30,11 +29,15 @@ interface ProcessedDocument {
 }
 
 class DocumentProcessor {
-  private openaiApiKey: string;
+  private azureEndpoint: string;
+  private azureApiKey: string;
+  private azureDeploymentName: string;
   private googleApiKey: string;
 
-  constructor(openaiApiKey: string, googleApiKey: string) {
-    this.openaiApiKey = openaiApiKey;
+  constructor(azureEndpoint: string, azureApiKey: string, azureDeploymentName: string, googleApiKey: string) {
+    this.azureEndpoint = azureEndpoint;
+    this.azureApiKey = azureApiKey;
+    this.azureDeploymentName = azureDeploymentName;
     this.googleApiKey = googleApiKey;
   }
 
@@ -44,14 +47,14 @@ class DocumentProcessor {
       
       let extractedText = '';
       
-      // Try direct OpenAI processing first for PDFs
+      // Try direct Azure OpenAI processing first for PDFs
       if (mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf')) {
         try {
-          console.log('Trying direct OpenAI file processing...');
+          console.log('Trying direct Azure OpenAI file processing...');
           const base64 = this.arrayBufferToBase64(fileData);
-          const result = await this.processDocumentFileWithOpenAI(base64, fileName, mimeType);
+          const result = await this.processDocumentFileWithAzureOpenAI(base64, fileName, mimeType);
           if (result && Object.keys(result).length > 3) {
-            console.log('Direct OpenAI processing successful');
+            console.log('Direct Azure OpenAI processing successful');
             return {
               fileName,
               processingStatus: 'completed',
@@ -59,7 +62,7 @@ class DocumentProcessor {
             } as ProcessedDocument;
           }
         } catch (directError) {
-          console.warn('Direct OpenAI processing failed:', directError instanceof Error ? directError.message : 'Unknown error');
+          console.warn('Direct Azure OpenAI processing failed:', directError instanceof Error ? directError.message : 'Unknown error');
         }
       }
 
@@ -96,9 +99,9 @@ class DocumentProcessor {
         }
       }
 
-      // Process with OpenAI
-      console.log(`Processing extracted text with OpenAI: ${extractedText.length} characters`);
-      const extractedData = await this.processDocumentTextWithOpenAI(extractedText, fileName);
+      // Process with Azure OpenAI
+      console.log(`Processing extracted text with Azure OpenAI: ${extractedText.length} characters`);
+      const extractedData = await this.processDocumentTextWithAzureOpenAI(extractedText, fileName);
       
       return {
         fileName,
@@ -110,21 +113,20 @@ class DocumentProcessor {
       console.error(`Error processing file ${fileName}:`, error);
       return {
         fileName,
+        "כותרת הועדה": null,
         "סוג ועדה": null,
         "שם טופס": null,
         "סניף הוועדה": null,
         "שם המבוטח": null,
         "ת.ז:": null,
+        "תאריך ועדה": null,
         "תאריך פגיעה(רק באיבה,נכות מעבודה)": null,
-        "משתתפי הועדה": null,
-        "תקופה": null,
-        "אבחנה": null,
-        "סעיף ליקוי": null,
+        "משתתף ועדה 1": null,
+        "משתתף ועדה 2": null,
+        "משתתף ועדה 3": null,
+        "משתתף ועדה 4": null,
+        "החלטות": null,
         "אחוז הנכות הנובע מהפגיעה": null,
-        "הערות": null,
-        "מתאריך": null,
-        "עד תאריך": null,
-        "מידת הנכות": null,
         "אחוז הנכות משוקלל": null,
         "שקלול לפטור ממס": null,
         processingStatus: 'error',
@@ -133,17 +135,18 @@ class DocumentProcessor {
     }
   }
 
-  private async processDocumentFileWithOpenAI(base64: string, fileName: string, mimeType: string): Promise<Partial<ProcessedDocument>> {
+  private async processDocumentFileWithAzureOpenAI(base64: string, fileName: string, mimeType: string): Promise<Partial<ProcessedDocument>> {
     const prompt = this.createEnhancedExtractionPrompt("");
     
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const azureUrl = `${this.azureEndpoint}/openai/deployments/${this.azureDeploymentName}/chat/completions?api-version=2024-02-15-preview`;
+    
+    const response = await fetch(azureUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.openaiApiKey}`,
+        'api-key': this.azureApiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: "gpt-4o",
         messages: [
           {
             role: "user",
@@ -167,20 +170,21 @@ class DocumentProcessor {
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`Azure OpenAI API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
     const content = data.choices[0].message.content;
     
     if (!content) {
-      throw new Error('OpenAI returned empty response');
+      throw new Error('Azure OpenAI returned empty response');
     }
 
     return this.parseOpenAIResponse(content);
   }
 
-  private async processDocumentTextWithOpenAI(text: string, fileName: string): Promise<Partial<ProcessedDocument>> {
+  private async processDocumentTextWithAzureOpenAI(text: string, fileName: string): Promise<Partial<ProcessedDocument>> {
     const cleanedText = this.cleanHebrewText(text);
     const maxLength = 15000;
     const truncatedText = cleanedText.length > maxLength ? cleanedText.substring(0, maxLength) + '...' : cleanedText;
@@ -194,34 +198,35 @@ class DocumentProcessor {
     
     const prompt = this.createEnhancedExtractionPrompt(truncatedText);
     
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const azureUrl = `${this.azureEndpoint}/openai/deployments/${this.azureDeploymentName}/chat/completions?api-version=2024-02-15-preview`;
+    
+    const response = await fetch(azureUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.openaiApiKey}`,
+        'api-key': this.azureApiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
         messages: [{ role: "user", content: prompt }],
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`Azure OpenAI API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
     const content = data.choices[0].message.content;
     
     if (!content) {
-      throw new Error('OpenAI returned empty response');
+      throw new Error('Azure OpenAI returned empty response');
     }
 
     return this.parseOpenAIResponse(content);
   }
 
   private async processWithGoogleOCR(fileData: Uint8Array, fileName: string): Promise<string> {
-    // Convert to base64 for Google API
     const base64 = this.arrayBufferToBase64(fileData);
     
     const requestBody = {
@@ -272,17 +277,13 @@ class DocumentProcessor {
   private extractTextFromPdf(fileData: Uint8Array): Promise<string> {
     return new Promise((resolve, reject) => {
       try {
-        // Enhanced text extraction from binary data
         let extractedTexts: string[] = [];
         
-        // Try multiple Hebrew decoding strategies
         const hebrewDecodingStrategies = [
-          // Standard UTF-8
           () => {
             const decoder = new TextDecoder('utf-8', { fatal: false });
             return decoder.decode(fileData);
           },
-          // Windows-1255 Hebrew
           () => {
             let result = '';
             for (let i = 0; i < fileData.length; i++) {
@@ -305,7 +306,6 @@ class DocumentProcessor {
           try {
             const content = hebrewDecodingStrategies[strategyIndex]();
             
-            // Look for Hebrew medical document patterns
             const hebrewPatterns = [
               /([א-ת]{2,})\s+([א-ת]{2,})(?:\s+([א-ת]{2,}))?/g,
               /ועדה\s*רפואית[^]*?(?=\n|\.)/gi,
@@ -326,7 +326,6 @@ class DocumentProcessor {
               }
             }
             
-            // Also look for structured data
             const dataPatterns = [
               /\b\d{9}\b/g,
               /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4}/g,
@@ -343,7 +342,6 @@ class DocumentProcessor {
           }
         }
         
-        // Clean and deduplicate
         const uniqueTexts = [...new Set(extractedTexts)]
           .filter(text => text && text.trim().length > 1)
           .map(text => text.trim())
@@ -412,21 +410,20 @@ ${text}
 
 **פורמט החזרה - JSON בלבד:**
 {
+  "כותרת הועדה": "...",
   "סוג ועדה": "...",
   "שם טופס": "...",
   "סניף הוועדה": "...",
   "שם המבוטח": "...",
   "ת.ז:": "...",
+  "תאריך ועדה": "...",
   "תאריך פגיעה(רק באיבה,נכות מעבודה)": "...",
-  "משתתפי הועדה": "...",
-  "תקופה": "...",
-  "אבחנה": "...",
-  "סעיף ליקוי": "...",
+  "משתתף ועדה 1": "...",
+  "משתתף ועדה 2": "...",
+  "משתתף ועדה 3": "...",
+  "משתתף ועדה 4": "...",
+  "החלטות": [...],
   "אחוז הנכות הנובע מהפגיעה": "...",
-  "הערות": "...",
-  "מתאריך": "...",
-  "עד תאריך": "...",
-  "מידת הנכות": "...",
   "אחוז הנכות משוקלל": "...",
   "שקלול לפטור ממס": "..."
 }
@@ -435,10 +432,9 @@ ${text}
   }
 
   private parseOpenAIResponse(content: string): Partial<ProcessedDocument> {
-    console.log('OpenAI raw response content:', content);
+    console.log('Azure OpenAI raw response content:', content);
     
     try {
-      // Clean the response
       let cleanContent = content;
       if (cleanContent.startsWith('```json')) {
         cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
@@ -460,84 +456,40 @@ ${text}
         extractedData = JSON.parse(fixedContent);
       }
       
-      const convertToString = (value: any): string => {
-        if (value === null || value === undefined || value === "null") return "";
-        if (typeof value === 'string') return value;
-        if (Array.isArray(value)) {
-          return value.map(item => {
-            if (typeof item === 'object' && item !== null) {
-              if (item.שם && item.תפקיד) {
-                return `${item.שם} (${item.תפקיד})`;
-              }
-              return Object.values(item).join(' - ');
-            }
-            return String(item);
-          }).join(', ');
-        }
-        if (typeof value === 'object' && value !== null) return JSON.stringify(value);
-        return String(value);
-      };
-      
-      const result: Partial<ProcessedDocument> = {};
-      
-      const fieldMapping = {
-        "סוג ועדה": "סוג ועדה",
-        "שם טופס": "שם טופס", 
-        "סניף הוועדה": "סניף הוועדה",
-        "שם המבוטח": "שם המבוטח",
-        "ת.ז:": "ת.ז:",
-        "תאריך פגיעה(רק באיבה,נכות מעבודה)": "תאריך פגיעה(רק באיבה,נכות מעבודה)",
-        "משתתפי הועדה": "משתתפי הועדה",
-        "תקופה": "תקופה", 
-        "אבחנה": "אבחנה",
-        "סעיף ליקוי": "סעיף ליקוי",
-        "אחוז הנכות הנובע מהפגיעה": "אחוז הנכות הנובע מהפגיעה",
-        "הערות": "הערות",
-        "מתאריך": "מתאריך",
-        "עד תאריך": "עד תאריך", 
-        "מידת הנכות": "מידת הנכות",
-        "אחוז הנכות משוקלל": "אחוז הנכות משוקלל",
-        "שקלול לפטור ממס": "שקלול לפטור ממס"
-      };
-      
-      Object.entries(fieldMapping).forEach(([key, field]) => {
-        if (extractedData.hasOwnProperty(key)) {
-          const value = convertToString(extractedData[key]);
-          (result as any)[field] = value;
-        }
-      });
-      
-      return result;
+      console.log('Successfully parsed JSON:', Object.keys(extractedData));
+      return extractedData;
       
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
-      // Regex fallback
-      const result: Partial<ProcessedDocument> = {};
+      console.error('Failed content:', content);
       
-      const extractField = (pattern: string, fieldName: string) => {
+      // Fallback to regex extraction
+      const result: Partial<ProcessedDocument> = {} as Partial<ProcessedDocument>;
+      
+      const extractField = (pattern: string, fieldName: keyof ProcessedDocument) => {
         const match = content.match(new RegExp(`"${pattern}":\\s*"([^"]+)"`, 'i'));
         if (match) {
           (result as any)[fieldName] = match[1];
         }
       };
       
+      extractField('כותרת הועדה', 'כותרת הועדה');
       extractField('סוג ועדה', 'סוג ועדה');
       extractField('שם טופס', 'שם טופס');
       extractField('סניף הוועדה', 'סניף הוועדה');
       extractField('שם המבוטח', 'שם המבוטח');
       extractField('ת\\.ז:', 'ת.ז:');
+      extractField('תאריך ועדה', 'תאריך ועדה');
       extractField('תאריך פגיעה\\(רק באיבה,נכות מעבודה\\)', 'תאריך פגיעה(רק באיבה,נכות מעבודה)');
-      extractField('תקופה', 'תקופה');
-      extractField('אבחנה', 'אבחנה');
-      extractField('סעיף ליקוי', 'סעיף ליקוי');
+      extractField('משתתף ועדה 1', 'משתתף ועדה 1');
+      extractField('משתתף ועדה 2', 'משתתף ועדה 2');
+      extractField('משתתף ועדה 3', 'משתתף ועדה 3');
+      extractField('משתתף ועדה 4', 'משתתף ועדה 4');
       extractField('אחוז הנכות הנובע מהפגיעה', 'אחוז הנכות הנובע מהפגיעה');
-      extractField('הערות', 'הערות');
-      extractField('מתאריך', 'מתאריך');
-      extractField('עד תאריך', 'עד תאריך');
-      extractField('מידת הנכות', 'מידת הנכות');
       extractField('אחוז הנכות משוקלל', 'אחוז הנכות משוקלל');
       extractField('שקלול לפטור ממס', 'שקלול לפטור ממס');
       
+      console.log('Using regex fallback extraction:', result);
       return result;
     }
   }
@@ -558,7 +510,6 @@ ${text}
     fixed = fixed.replace(/"null"/g, 'null');
     fixed = fixed.replace(/,\s*}/g, '}');
     fixed = fixed.replace(/,\s*]/g, ']');
-    fixed = fixed.replace(/(\n\s*)([^"{\s][^:\n]*?)(\s*:)/g, '$1"$2"$3');
     
     return fixed;
   }
@@ -581,92 +532,98 @@ ${text}
     if (!text || text.length === 0) return 0;
     
     const hebrewLetters = (text.match(/[\u05D0-\u05EA]/g) || []).length;
-    const englishLetters = (text.match(/[a-zA-Z]/g) || []).length;
+    const englishLetters = (text.match(/[A-Za-z]/g) || []).length;
     const digits = (text.match(/\d/g) || []).length;
-    const punctuation = (text.match(/[.,;:!?()[\]{}"-]/g) || []).length;
-    const spaces = (text.match(/\s/g) || []).length;
+    const punctuation = (text.match(/[.,;:!?()\-\s]/g) || []).length;
     
-    const readableChars = hebrewLetters + englishLetters + digits + punctuation + spaces;
-    const ratio = (readableChars / text.length) * 100;
+    const totalReadable = hebrewLetters + englishLetters + digits + punctuation;
+    const ratio = (totalReadable / text.length) * 100;
     
-    const words = text.split(/\s+/).filter(word => 
-      word.length > 1 && (/[\u05D0-\u05EA]/.test(word) || /[a-zA-Z]/.test(word))
-    );
-    const wordBonus = Math.min((words.length / 10) * 5, 15);
+    const hebrewWords = (text.match(/[\u05D0-\u05EA]{2,}/g) || []).length;
+    const wordBonus = Math.min(hebrewWords * 2, 20);
     
     return Math.min(ratio + wordBonus, 100);
   }
 
-  private fixRtlText(text: string): string {
-    let cleaned = text
-      .replace(/\r\n/g, '\n')
-      .replace(/\r/g, '\n')
-      .replace(/[״״]/g, '"')
-      .replace(/[׳']/g, "'")
-      .replace(/\n\s*\n/g, '\n\n')
-      .replace(/\t/g, ' ')
-      .replace(/ {2,}/g, ' ')
-      .trim();
-    
-    return cleaned;
-  }
-
   private arrayBufferToBase64(buffer: Uint8Array): string {
     let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    for (let i = 0; i < buffer.length; i++) {
+      binary += String.fromCharCode(buffer[i]);
     }
     return btoa(binary);
+  }
+
+  private fixRtlText(text: string): string {
+    if (!text) return '';
+    
+    const lines = text.split('\n');
+    const fixedLines = lines.map(line => {
+      const hebrewRatio = (line.match(/[\u05D0-\u05EA]/g) || []).length / Math.max(line.length, 1);
+      
+      if (hebrewRatio > 0.3) {
+        return line.split(' ').reverse().join(' ');
+      }
+      return line;
+    });
+    
+    return fixedLines.join('\n');
   }
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
-    const googleApiKey = Deno.env.get('GOOGLE_CLOUD_API_KEY');
+    // Azure OpenAI configuration
+    const azureEndpoint = Deno.env.get('AZURE_OPENAI_ENDPOINT');
+    const azureApiKey = Deno.env.get('AZURE_OPENAI_API_KEY');
+    const azureDeploymentName = Deno.env.get('AZURE_OPENAI_DEPLOYMENT_NAME');
+    const googleApiKey = Deno.env.get('GOOGLE_VISION_API_KEY') || '';
 
-    if (!openaiApiKey) {
-      throw new Error('OPENAI_API_KEY not configured');
+    if (!azureEndpoint || !azureApiKey || !azureDeploymentName) {
+      throw new Error('Azure OpenAI configuration not complete. Required: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT_NAME');
     }
 
-    console.log('Processing document request...');
-    
-    // Parse form data
+    console.log('Azure OpenAI configuration loaded successfully');
+
     const formData = await req.formData();
-    const file = formData.get('file') as File;
+    const files = formData.getAll('files') as File[];
     
-    if (!file) {
-      throw new Error('No file provided');
+    if (!files || files.length === 0) {
+      throw new Error('No files provided');
     }
 
-    console.log(`Received file: ${file.name}, size: ${file.size}, type: ${file.type}`);
+    console.log(`Processing ${files.length} files with Azure OpenAI`);
+
+    const processor = new DocumentProcessor(azureEndpoint, azureApiKey, azureDeploymentName, googleApiKey);
     
-    // Convert file to Uint8Array
-    const arrayBuffer = await file.arrayBuffer();
-    const fileData = new Uint8Array(arrayBuffer);
+    const results: ProcessedDocument[] = [];
     
-    // Process the document
-    const processor = new DocumentProcessor(openaiApiKey, googleApiKey || '');
-    const result = await processor.processFile(fileData, file.name, file.type);
+    for (const file of files) {
+      console.log(`Processing file: ${file.name}, type: ${file.type}`);
+      
+      const arrayBuffer = await file.arrayBuffer();
+      const fileData = new Uint8Array(arrayBuffer);
+      
+      const result = await processor.processFile(fileData, file.name, file.type);
+      results.push(result);
+    }
     
-    console.log('Document processing completed:', result.processingStatus);
+    const successCount = results.filter(r => r.processingStatus === 'completed').length;
+    const errorCount = results.filter(r => r.processingStatus === 'error').length;
     
-    return new Response(JSON.stringify(result), {
+    console.log(`Processing completed: ${successCount} success, ${errorCount} errors`);
+
+    return new Response(JSON.stringify(results), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
     console.error('Error in process-documents function:', error);
     return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : 'Unknown error',
-      processingStatus: 'error' 
+      error: error instanceof Error ? error.message : 'Unknown error'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

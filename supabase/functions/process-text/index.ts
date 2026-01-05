@@ -13,10 +13,13 @@ serve(async (req) => {
   }
 
   try {
-    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    // Azure OpenAI configuration
+    const azureEndpoint = Deno.env.get('AZURE_OPENAI_ENDPOINT');
+    const azureApiKey = Deno.env.get('AZURE_OPENAI_API_KEY');
+    const azureDeploymentName = Deno.env.get('AZURE_OPENAI_DEPLOYMENT_NAME');
 
-    if (!openaiApiKey) {
-      throw new Error('OPENAI_API_KEY not configured');
+    if (!azureEndpoint || !azureApiKey || !azureDeploymentName) {
+      throw new Error('Azure OpenAI configuration not complete. Required: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT_NAME');
     }
 
     const { text, fileName } = await req.json();
@@ -28,7 +31,7 @@ serve(async (req) => {
     console.log(`Processing text for ${fileName}: ${text.length} characters`);
 
     const cleanedText = cleanHebrewText(text);
-    const maxLength = 25000; // Increased to capture final summary sentence
+    const maxLength = 25000;
     const truncatedText = cleanedText.length > maxLength ? cleanedText.substring(0, maxLength) + '...' : cleanedText;
     
     const readableRatio = calculateReadableRatio(truncatedText);
@@ -40,14 +43,18 @@ serve(async (req) => {
     
     const prompt = createEnhancedExtractionPrompt(truncatedText);
     
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Azure OpenAI API URL
+    const azureUrl = `${azureEndpoint}/openai/deployments/${azureDeploymentName}/chat/completions?api-version=2024-02-15-preview`;
+    
+    console.log(`Calling Azure OpenAI at: ${azureEndpoint}`);
+    
+    const response = await fetch(azureUrl, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${openaiApiKey}`,
+        'api-key': azureApiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o',
         messages: [
           { 
             role: "system", 
@@ -62,18 +69,18 @@ serve(async (req) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('OpenAI API error:', response.status, errorText);
-      throw new Error(`OpenAI API error: ${response.status}`);
+      console.error('Azure OpenAI API error:', response.status, errorText);
+      throw new Error(`Azure OpenAI API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
     const content = data.choices[0].message.content;
     
     if (!content) {
-      throw new Error('OpenAI returned empty response');
+      throw new Error('Azure OpenAI returned empty response');
     }
 
-    console.log('OpenAI raw response content:', content);
+    console.log('Azure OpenAI raw response content:', content);
 
     const result = parseOpenAIResponse(content);
     
@@ -263,71 +270,6 @@ ${text}
 
 5. **מידת הנכות**: "זמני" ← זה מופיע בעמודת "הערות"
 
-**איך לחלץ מכל שורה:**
-1. **תקופה** (עמודה 1) → "מתאריך" + "עד תאריך"
-2. **אבחנה** (עמודה 2) → "אבחנה"
-3. **סעיף** (עמודה 3) → "סעיף ליקוי" (כמו "מותאם", "עד", "(II)(23)2()א")
-4. **אחוז** (עמודה 4) → "אחוז הנכות" (**חייב להיות מספר!** 20%, 15%, וכו')
-5. **הערות** (עמודה 5) → "מידת הנכות" (זמני/צמית)
-
-**🔴 שגיאות נפוצות - אל תעשה את זה:**
-❌ "אחוז הנכות": "זמני" ← **שגוי!** זה צריך להיות מספר!
-❌ "אחוז הנכות": "צמית" ← **שגוי!** זה צריך להיות מספר!
-❌ "אחוז הנכות": "מותאם" ← **שגוי!** זה סעיף ליקוי, לא אחוז!
-
-✅ "אחוז הנכות": "20%" ← נכון!
-✅ "מידת הנכות": "צמית" ← נכון!
-
-
-**📋 דוגמה - איך לקרוא שורה:**
-
-שורה בטבלה:
-[מ: 01/09/2024 | תכיפות מתן שתן | (II)(23)2()א | 10% | צמית]
-
-חילוץ נכון:
-- עמודה 1: "מ: 01/09/2024" → "מתאריך": "01/09/2024", "עד תאריך": "עד להודעה חדשה"
-- עמודה 2: "תכיפות מתן שתן" → "אבחנה": "תכיפות מתן שתן"
-- עמודה 3: "(II)(23)2()א" → "סעיף ליקוי": "(II)(23)2()א"
-- עמודה 4: "10%" → **"אחוז הנכות": "10%"** ← זה מספר!
-- עמודה 5: "צמית" → **"מידת הנכות": "צמית"** ← זה לא מספר!
-
-→ JSON תוצאה:
-[
-  {
-    "אבחנה": "תכיפות במתן שתן",
-    "סעיף ליקוי": "(II)(23)2()א",
-    "אחוז הנכות": "10%",
-    "מתאריך": "01/09/2024",
-    "עד תאריך": "עד להודעה חדשה",
-    "מידת הנכות": "צמית",
-    "הערות": null
-  },
-  {
-    "אבחנה": "כאב במפרק",
-    "סעיף ליקוי": "עד",
-    "אחוז הנכות": "20%",
-    "מתאריך": "01/01/2025",
-    "עד תאריך": "31/12/2025",
-    "מידת הנכות": "זמני",
-    "הערות": null
-  }
-]
-
-שורה נוספת:
-| מ: 01/01/2025 עד: 31/12/2025 | כאב במפרק | עד | 20% | זמני |
-
-→ תהיה:
-  {
-    "אבחנה": "כאב במפרק",
-    "סעיף ליקוי": "עד",
-    "אחוז הנכות": "20%",
-    "מתאריך": "01/01/2025",
-    "עד תאריך": "31/12/2025",
-    "מידת הנכות": "זמני",
-    "הערות": null
-  }
-]
-
 **⚠️ קריטי! זכור:**
 - **חלץ כל השורות!** לא רק 2-3! אם יש 14 שורות → החזר 14 החלטות!
 - **אחוז הנכות** = מספר בלבד (5%, 10%, 20%, 30%)
@@ -371,24 +313,11 @@ ${text}
        - **עד תאריך**: "עד להודעה חדשה" (אם כתוב "ואילך" או "קבועה")
        - **עד תאריך**: התאריך הספציפי (אם יש תאריך סיום מפורש)
     
-    2. **טבלת "החלטה אחרונה מתאריך" או "החלטה רפואית מתאריך"**:
-       - דוגמה:
-         | עד תאריך | מתאריך | נכות רפואית |
-         | 31/10/2025 | 16/02/2025 | 21.0% |
-       - **מתאריך**: "16/02/2025"
-       - **עד תאריך**: "31/10/2025"
+    2. **טבלת שקלול נכות**:
+       - חפש טבלה עם עמודה "מתאריך" + "עד תאריך" + "נכות משוקלל"
+       - קח את התאריכים מהשורה האחרונה/הסופית
     
-    3. **טבלה סופית** עם "מתאריך" ו"תאריך עד":
-       | נכות | שקלול נכות | נכות משוקלל | תאריך עד | מתאריך |
-       | 30.7% | 31% | זמני | 31/10/2026 | 01/11/2025 |
-       → מתאריך: "01/11/2025", עד תאריך: "31/10/2026"
-    
-    4. **טבלה עם "התקופה"** - קח את השורה **האחרונה**:
-       | התקופה | הנכות הרפואית |
-       | מ-01/04/2024 ואילך | 28.0% |
-       → מתאריך: "01/04/2024"
-       → עד תאריך: "עד להודעה חדשה" (אם כתוב "ואילך")
-  
+    3. **אחרת** - החזר null
 
 **פורמט החזרה - JSON בלבד:**
 {
@@ -423,228 +352,16 @@ ${text}
 **חובה: רק JSON, ללא הסברים או טקסט נוסף!**`;
 }
 
-function parseOpenAIResponse(content: string): any {
-  console.log('OpenAI raw response content:', content);
-  
-  try {
-    // Clean the response
-    let cleanContent = content.trim();
-    
-    // Remove markdown code blocks
-    if (cleanContent.startsWith('```json')) {
-      cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-    } else if (cleanContent.startsWith('```')) {
-      cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
-    }
-    
-    // Apply multiple rounds of JSON fixing
-    cleanContent = fixJsonFormatting(cleanContent);
-    
-    let extractedData;
-    try {
-      extractedData = JSON.parse(cleanContent);
-    } catch (parseError) {
-      console.error('First parse attempt failed:', parseError);
-      
-      // Try more aggressive fixing
-      let fixedContent = cleanContent
-        .replace(/\u200B/g, '') // Zero-width space
-        .replace(/\u00A0/g, ' ') // Non-breaking space
-        .replace(/[\u200C\u200D]/g, '') // Zero-width non-joiner/joiner
-        .replace(/[\u202A-\u202E]/g, '') // Left-to-right/right-to-left marks
-        .replace(/\\/g, '\\\\') // Escape backslashes
-        .replace(/"/g, '\\"') // Escape quotes
-        .replace(/\\"/g, '"') // Fix over-escaped quotes
-        .replace(/"\s*:\s*"/g, '": "') // Fix spacing around colons
-        .replace(/",\s*"/g, '", "') // Fix spacing around commas
-        .trim();
-      
-      // Try to fix common JSON issues
-      fixedContent = fixJsonFormatting(fixedContent);
-      
-      try {
-        extractedData = JSON.parse(fixedContent);
-      } catch (secondParseError) {
-        console.error('Second parse attempt failed:', secondParseError);
-        
-        // Last resort: use regex to extract fields
-        return extractDataWithRegex(content);
-      }
-    }
-    
-    const convertToString = (value: any): string => {
-      if (value === null || value === undefined || value === "null") return "";
-      if (typeof value === 'string') return value;
-      if (Array.isArray(value)) {
-        return value.map(item => {
-          if (typeof item === 'object' && item !== null) {
-            if (item.שם && item.תפקיד) {
-              return `${item.שם} (${item.תפקיד})`;
-            }
-            return Object.values(item).join(' - ');
-          }
-          return String(item);
-        }).join(', ');
-      }
-      if (typeof value === 'object' && value !== null) return JSON.stringify(value);
-      return String(value);
-    };
-    
-    const result: any = {};
-    
-    const fieldMapping = {
-      "כותרת הועדה": "כותרת הועדה",
-      "סוג ועדה": "סוג ועדה",
-      "שם טופס": "שם טופס", 
-      "סניף הוועדה": "סניף הוועדה",
-      "שם המבוטח": "שם המבוטח",
-      "ת.ז:": "ת.ז:",
-      "תאריך ועדה": "תאריך ועדה",
-      "תאריך פגיעה(רק באיבה,נכות מעבודה)": "תאריך פגיעה(רק באיבה,נכות מעבודה)",
-      "משתתף ועדה 1": "משתתף ועדה 1",
-      "משתתף ועדה 2": "משתתף ועדה 2",
-      "משתתף ועדה 3": "משתתף ועדה 3",
-      "משתתף ועדה 4": "משתתף ועדה 4",
-      "משתתפי הועדה": "משתתפי הועדה",
-      "אבחנה": "אבחנה",
-      "סעיף ליקוי": "סעיף ליקוי",
-      "אחוז הנכות": "אחוז הנכות",
-      "אחוז הנכות הנובע מהפגיעה": "אחוז הנכות הנובע מהפגיעה",
-      "הערות": "הערות",
-      "מתאריך": "מתאריך",
-      "עד תאריך": "עד תאריך", 
-      "מידת הנכות": "מידת הנכות",
-      "אחוז הנכות משוקלל": "אחוז הנכות משוקלל",
-      "שקלול לפטור ממס": "שקלול לפטור ממס"
-    };
-    
-    Object.entries(fieldMapping).forEach(([key, field]) => {
-      if (extractedData.hasOwnProperty(key)) {
-        const value = convertToString(extractedData[key]);
-        result[field] = value;
-      }
-    });
-    
-    // Handle "החלטות" separately - keep it as an array
-    if (extractedData.hasOwnProperty("החלטות") && Array.isArray(extractedData["החלטות"])) {
-      result["החלטות"] = extractedData["החלטות"];
-    }
-    
-    return result;
-    
-  } catch (parseError) {
-    console.error('JSON parse error:', parseError);
-    return {};
-  }
-}
-
-function fixJsonFormatting(content: string): string {
-  let fixed = content.trim();
-  
-  // Extract JSON object
-  const jsonStart = fixed.indexOf('{');
-  const jsonEnd = fixed.lastIndexOf('}') + 1;
-  if (jsonStart !== -1 && jsonEnd !== -1) {
-    fixed = fixed.substring(jsonStart, jsonEnd);
-  }
-  
-  // Fix common JSON formatting issues
-  fixed = fixed.replace(/}\s*\n?\s*{/g, '},\n    {');
-  fixed = fixed.replace(/"\s*\n\s*"/g, '",\n  "');
-  fixed = fixed.replace(/"\s*\n\s*}/g, '"\n  }');
-  fixed = fixed.replace(/]\s*\n\s*"/g, '],\n  "');
-  
-  // Handle null values
-  fixed = fixed.replace(/"null"/g, 'null');
-  fixed = fixed.replace(/:\s*null\s*"/g, ': null');
-  fixed = fixed.replace(/:\s*""\s*,/g, ': null,');
-  fixed = fixed.replace(/:\s*""\s*}/g, ': null}');
-  
-  // Remove trailing commas
-  fixed = fixed.replace(/,(\s*[}\]])/g, '$1');
-  
-  // Fix unquoted property names
-  fixed = fixed.replace(/(\n\s*)([^"{\s][^:\n]*?)(\s*:)/g, '$1"$2"$3');
-  
-  // Fix escaped quotes in values
-  fixed = fixed.replace(/: "([^"]*)\\"([^"]*)"([^,}\n]*)/g, ': "$1\\"$2"');
-  
-  // Ensure proper structure
-  if (!fixed.startsWith('{')) fixed = '{' + fixed;
-  if (!fixed.endsWith('}')) fixed = fixed + '}';
-  
-  return fixed;
-}
-
-function extractDataWithRegex(content: string): any {
-  console.log('Using regex fallback for data extraction');
-  
-  const result: any = {};
-  
-  const patterns = {
-    'כותרת הועדה': /"כותרת הועדה"[:\s]*"([^"]+)"/,
-    'סוג ועדה': /"סוג ועדה"[:\s]*"([^"]+)"/,
-    'שם טופס': /"שם טופס"[:\s]*"([^"]+)"/,
-    'סניף הוועדה': /"סניף הוועדה"[:\s]*"([^"]+)"/,
-    'שם המבוטח': /"שם המבוטח"[:\s]*"([^"]+)"/,
-    'ת.ז:': /"ת\.ז:"[:\s]*"([^"]+)"/,
-    'תאריך ועדה': /"תאריך ועדה"[:\s]*"([^"]+)"/,
-    'תאריך פגיעה(רק באיבה,נכות מעבודה)': /"תאריך פגיעה\(רק באיבה,נכות מעבודה\)"[:\s]*"([^"]+)"/,
-    'משתתפי הועדה': /"משתתפי הועדה"[:\s]*"([^"]+)"/,
-    'אבחנה': /"אבחנה"[:\s]*"([^"]+)"/,
-    'סעיף ליקוי': /"סעיף ליקוי"[:\s]*"([^"]+)"/,
-    'אחוז הנכות': /"אחוז הנכות"[:\s]*"([^"]+)"/,
-    'אחוז הנכות הנובע מהפגיעה': /"אחוז הנכות הנובע מהפגיעה"[:\s]*"([^"]+)"/,
-    'הערות': /"הערות"[:\s]*"([^"]+)"/,
-    'מתאריך': /"מתאריך"[:\s]*"([^"]+)"/,
-    'עד תאריך': /"עד תאריך"[:\s]*"([^"]+)"/,
-    'מידת הנכות': /"מידת הנכות"[:\s]*"([^"]+)"/,
-    'אחוז הנכות משוקלל': /"אחוז הנכות משוקלל"[:\s]*"([^"]+)"/,
-    'שקלול לפטור ממס': /"שקלול לפטור ממס"[:\s]*"([^"]+)"/
-  };
-  
-  Object.entries(patterns).forEach(([key, pattern]) => {
-    const match = content.match(pattern);
-    result[key] = match ? match[1] : "";
-  });
-  
-  return result;
-}
-
 function cleanHebrewText(text: string): string {
   if (!text) return '';
   
   let cleaned = text
-    // Remove Hebrew diacritics
     .replace(/[\u0591-\u05BD\u05BF-\u05C2\u05C4-\u05C5\u05C7]/g, '')
-    // Replace Hebrew punctuation
     .replace(/[׃־]/g, ' ')
-    // Clean Hebrew letters with diacritics
     .replace(/[\u05D0-\u05EA][\u0590-\u05C7]+/g, match => match.charAt(0))
-    // Replace Hebrew quotes
     .replace(/[״׳]/g, '"')
-    // Clean up corrupted characters and symbols
-    .replace(/[λ⊥αΛΑαβγδεζηθικμνξοπρστυφχψω∠∀∁∂∃∄∅∆∇∈∉∊∋∌∍∎∏∐∑−∓∔∕∖∗∘∙√∛∜∝∞∟∠∡∢∣∤∥∦∧∨∩∪∫∬∭∮∯∰∱∲∳∴∵∶∷∸∹∺∻∼∽∾∿≀≁≂≃≄≅≆≇≈≉≊≋≌≍≎≏]/g, '')
-    // Remove corrupted text patterns
-    .replace(/[UIXLGCETANOWK]+/g, '')
-    // Clean up random symbols and punctuation
-    .replace(/[^\u05D0-\u05EA\u0590-\u05FF0-9a-zA-Z\s.,;:!?()\[\]{}"'-]/g, ' ')
-    // Normalize whitespace
     .replace(/\s+/g, ' ')
     .trim();
-    
-  // Try to reconstruct readable Hebrew text by looking for patterns
-  const hebrewWords = cleaned.match(/[\u05D0-\u05EA]{2,}/g) || [];
-  const englishWords = cleaned.match(/[a-zA-Z]{2,}/g) || [];
-  const numbers = cleaned.match(/\d+/g) || [];
-  
-  // If we have some Hebrew content, keep it
-  if (hebrewWords.length > 0) {
-    const reconstructed = [...hebrewWords, ...englishWords, ...numbers].join(' ');
-    if (reconstructed.length > cleaned.length * 0.3) {
-      return reconstructed;
-    }
-  }
   
   return cleaned;
 }
@@ -653,18 +370,98 @@ function calculateReadableRatio(text: string): number {
   if (!text || text.length === 0) return 0;
   
   const hebrewLetters = (text.match(/[\u05D0-\u05EA]/g) || []).length;
-  const englishLetters = (text.match(/[a-zA-Z]/g) || []).length;
+  const englishLetters = (text.match(/[A-Za-z]/g) || []).length;
   const digits = (text.match(/\d/g) || []).length;
-  const punctuation = (text.match(/[.,;:!?()[\]{}"-]/g) || []).length;
-  const spaces = (text.match(/\s/g) || []).length;
+  const punctuation = (text.match(/[.,;:!?()\-\s]/g) || []).length;
   
-  const readableChars = hebrewLetters + englishLetters + digits + punctuation + spaces;
-  const ratio = (readableChars / text.length) * 100;
+  const totalReadable = hebrewLetters + englishLetters + digits + punctuation;
+  const ratio = (totalReadable / text.length) * 100;
   
-  const words = text.split(/\s+/).filter(word => 
-    word.length > 1 && (/[\u05D0-\u05EA]/.test(word) || /[a-zA-Z]/.test(word))
-  );
-  const wordBonus = Math.min((words.length / 10) * 5, 15);
+  const hebrewWords = (text.match(/[\u05D0-\u05EA]{2,}/g) || []).length;
+  const wordBonus = Math.min(hebrewWords * 2, 20);
   
   return Math.min(ratio + wordBonus, 100);
+}
+
+function parseOpenAIResponse(content: string): any {
+  console.log('Parsing Azure OpenAI response...');
+  
+  try {
+    let cleanContent = content;
+    if (cleanContent.startsWith('```json')) {
+      cleanContent = cleanContent.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (cleanContent.startsWith('```')) {
+      cleanContent = cleanContent.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+    
+    cleanContent = fixJsonFormatting(cleanContent);
+    
+    let extractedData;
+    try {
+      extractedData = JSON.parse(cleanContent);
+    } catch (parseError) {
+      const fixedContent = cleanContent
+        .replace(/\u200B/g, '')
+        .replace(/\u00A0/g, ' ')
+        .replace(/[\u200C\u200D]/g, '')
+        .trim();
+      extractedData = JSON.parse(fixedContent);
+    }
+    
+    console.log('Successfully parsed JSON:', Object.keys(extractedData));
+    return extractedData;
+    
+  } catch (parseError) {
+    console.error('JSON parse error:', parseError);
+    console.error('Failed content:', content);
+    
+    // Fallback to regex extraction
+    const result: any = {};
+    
+    const extractField = (pattern: string, fieldName: string) => {
+      const match = content.match(new RegExp(`"${pattern}":\\s*"([^"]+)"`, 'i'));
+      if (match) {
+        result[fieldName] = match[1];
+      }
+    };
+    
+    extractField('כותרת הועדה', 'כותרת הועדה');
+    extractField('סוג ועדה', 'סוג ועדה');
+    extractField('שם טופס', 'שם טופס');
+    extractField('סניף הוועדה', 'סניף הוועדה');
+    extractField('שם המבוטח', 'שם המבוטח');
+    extractField('ת\\.ז:', 'ת.ז:');
+    extractField('תאריך ועדה', 'תאריך ועדה');
+    extractField('תאריך פגיעה\\(רק באיבה,נכות מעבודה\\)', 'תאריך פגיעה(רק באיבה,נכות מעבודה)');
+    extractField('משתתף ועדה 1', 'משתתף ועדה 1');
+    extractField('משתתף ועדה 2', 'משתתף ועדה 2');
+    extractField('משתתף ועדה 3', 'משתתף ועדה 3');
+    extractField('משתתף ועדה 4', 'משתתף ועדה 4');
+    extractField('אחוז הנכות הנובע מהפגיעה', 'אחוז הנכות הנובע מהפגיעה');
+    extractField('אחוז הנכות משוקלל', 'אחוז הנכות משוקלל');
+    extractField('שקלול לפטור ממס', 'שקלול לפטור ממס');
+    
+    console.log('Using regex fallback extraction:', result);
+    return result;
+  }
+}
+
+function fixJsonFormatting(content: string): string {
+  let fixed = content.trim();
+  
+  const jsonStart = fixed.indexOf('{');
+  const jsonEnd = fixed.lastIndexOf('}') + 1;
+  if (jsonStart !== -1 && jsonEnd !== -1) {
+    fixed = fixed.substring(jsonStart, jsonEnd);
+  }
+  
+  fixed = fixed.replace(/}\s*\n?\s*{/g, '},\n    {');
+  fixed = fixed.replace(/"\s*\n\s*"/g, '",\n  "');
+  fixed = fixed.replace(/"\s*\n\s*}/g, '"\n  }');
+  fixed = fixed.replace(/]\s*\n\s*"/g, '],\n  "');
+  fixed = fixed.replace(/"null"/g, 'null');
+  fixed = fixed.replace(/,\s*}/g, '}');
+  fixed = fixed.replace(/,\s*]/g, ']');
+  
+  return fixed;
 }
