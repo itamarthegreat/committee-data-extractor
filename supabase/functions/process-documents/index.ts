@@ -28,17 +28,19 @@ interface ProcessedDocument {
   errorMessage?: string;
 }
 
-class DocumentProcessor {
-  private azureEndpoint: string;
-  private azureApiKey: string;
-  private azureDeploymentName: string;
+class DocumentProcessorWithOpenAI {
+  private endpoint: string;
+  private apiKey: string;
+  private deploymentName: string;
   private googleApiKey: string;
+  private useAzure: boolean;
 
-  constructor(azureEndpoint: string, azureApiKey: string, azureDeploymentName: string, googleApiKey: string) {
-    this.azureEndpoint = azureEndpoint;
-    this.azureApiKey = azureApiKey;
-    this.azureDeploymentName = azureDeploymentName;
+  constructor(endpoint: string, apiKey: string, deploymentName: string, googleApiKey: string, useAzure: boolean = false) {
+    this.endpoint = endpoint;
+    this.apiKey = apiKey;
+    this.deploymentName = deploymentName;
     this.googleApiKey = googleApiKey;
+    this.useAzure = useAzure;
   }
 
   async processFile(fileData: Uint8Array, fileName: string, mimeType: string): Promise<ProcessedDocument> {
@@ -47,14 +49,14 @@ class DocumentProcessor {
       
       let extractedText = '';
       
-      // Try direct Azure OpenAI processing first for PDFs
+      // Try direct OpenAI Vision processing first for PDFs
       if (mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf')) {
         try {
-          console.log('Trying direct Azure OpenAI file processing...');
+          console.log('Trying direct OpenAI Vision file processing...');
           const base64 = this.arrayBufferToBase64(fileData);
-          const result = await this.processDocumentFileWithAzureOpenAI(base64, fileName, mimeType);
+          const result = await this.processDocumentFileWithVision(base64, fileName, mimeType);
           if (result && Object.keys(result).length > 3) {
-            console.log('Direct Azure OpenAI processing successful');
+            console.log('Direct OpenAI Vision processing successful');
             return {
               fileName,
               processingStatus: 'completed',
@@ -62,7 +64,7 @@ class DocumentProcessor {
             } as ProcessedDocument;
           }
         } catch (directError) {
-          console.warn('Direct Azure OpenAI processing failed:', directError instanceof Error ? directError.message : 'Unknown error');
+          console.warn('Direct OpenAI Vision processing failed:', directError instanceof Error ? directError.message : 'Unknown error');
         }
       }
 
@@ -99,9 +101,9 @@ class DocumentProcessor {
         }
       }
 
-      // Process with Azure OpenAI
-      console.log(`Processing extracted text with Azure OpenAI: ${extractedText.length} characters`);
-      const extractedData = await this.processDocumentTextWithAzureOpenAI(extractedText, fileName);
+      // Process with OpenAI
+      console.log(`Processing extracted text with OpenAI: ${extractedText.length} characters`);
+      const extractedData = await this.processDocumentTextWithOpenAI(extractedText, fileName);
       
       return {
         fileName,
@@ -135,18 +137,31 @@ class DocumentProcessor {
     }
   }
 
-  private async processDocumentFileWithAzureOpenAI(base64: string, fileName: string, mimeType: string): Promise<Partial<ProcessedDocument>> {
+  private async processDocumentFileWithVision(base64: string, fileName: string, mimeType: string): Promise<Partial<ProcessedDocument>> {
     const prompt = this.createEnhancedExtractionPrompt("");
     
-    const azureUrl = `${this.azureEndpoint}/openai/deployments/${this.azureDeploymentName}/chat/completions?api-version=2024-02-15-preview`;
+    let url: string;
+    let headers: Record<string, string>;
     
-    const response = await fetch(azureUrl, {
-      method: 'POST',
-      headers: {
-        'api-key': this.azureApiKey,
+    if (this.useAzure) {
+      url = `${this.endpoint}/openai/deployments/${this.deploymentName}/chat/completions?api-version=2024-02-15-preview`;
+      headers = {
+        'api-key': this.apiKey,
         'Content-Type': 'application/json',
-      },
+      };
+    } else {
+      url = `${this.endpoint}/chat/completions`;
+      headers = {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      };
+    }
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
       body: JSON.stringify({
+        model: this.useAzure ? undefined : this.deploymentName,
         messages: [
           {
             role: "user",
@@ -171,20 +186,20 @@ class DocumentProcessor {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Azure OpenAI API error: ${response.status} - ${errorText}`);
+      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
     const content = data.choices[0].message.content;
     
     if (!content) {
-      throw new Error('Azure OpenAI returned empty response');
+      throw new Error('OpenAI returned empty response');
     }
 
     return this.parseOpenAIResponse(content);
   }
 
-  private async processDocumentTextWithAzureOpenAI(text: string, fileName: string): Promise<Partial<ProcessedDocument>> {
+  private async processDocumentTextWithOpenAI(text: string, fileName: string): Promise<Partial<ProcessedDocument>> {
     const cleanedText = this.cleanHebrewText(text);
     const maxLength = 15000;
     const truncatedText = cleanedText.length > maxLength ? cleanedText.substring(0, maxLength) + '...' : cleanedText;
@@ -198,29 +213,42 @@ class DocumentProcessor {
     
     const prompt = this.createEnhancedExtractionPrompt(truncatedText);
     
-    const azureUrl = `${this.azureEndpoint}/openai/deployments/${this.azureDeploymentName}/chat/completions?api-version=2024-02-15-preview`;
+    let url: string;
+    let headers: Record<string, string>;
     
-    const response = await fetch(azureUrl, {
-      method: 'POST',
-      headers: {
-        'api-key': this.azureApiKey,
+    if (this.useAzure) {
+      url = `${this.endpoint}/openai/deployments/${this.deploymentName}/chat/completions?api-version=2024-02-15-preview`;
+      headers = {
+        'api-key': this.apiKey,
         'Content-Type': 'application/json',
-      },
+      };
+    } else {
+      url = `${this.endpoint}/chat/completions`;
+      headers = {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json',
+      };
+    }
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
       body: JSON.stringify({
+        model: this.useAzure ? undefined : this.deploymentName,
         messages: [{ role: "user", content: prompt }],
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Azure OpenAI API error: ${response.status} - ${errorText}`);
+      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
     const content = data.choices[0].message.content;
     
     if (!content) {
-      throw new Error('Azure OpenAI returned empty response');
+      throw new Error('OpenAI returned empty response');
     }
 
     return this.parseOpenAIResponse(content);
@@ -576,38 +604,87 @@ serve(async (req) => {
   }
 
   try {
-    // Azure OpenAI configuration
+    // Try Azure OpenAI first, fallback to regular OpenAI
     const azureEndpoint = Deno.env.get('AZURE_OPENAI_ENDPOINT');
     const azureApiKey = Deno.env.get('AZURE_OPENAI_API_KEY');
     const azureDeploymentName = Deno.env.get('AZURE_OPENAI_DEPLOYMENT_NAME');
-    const googleApiKey = Deno.env.get('GOOGLE_VISION_API_KEY') || '';
+    const openaiApiKey = Deno.env.get('OPENAI_API_KEY');
+    const googleApiKey = Deno.env.get('GOOGLE_CLOUD_API_KEY') || Deno.env.get('GOOGLE_VISION_API_KEY') || '';
 
-    if (!azureEndpoint || !azureApiKey || !azureDeploymentName) {
-      throw new Error('Azure OpenAI configuration not complete. Required: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT_NAME');
+    let useAzure = false;
+    let effectiveEndpoint = '';
+    let effectiveApiKey = '';
+    let effectiveDeploymentName = '';
+
+    if (azureEndpoint && azureApiKey && azureDeploymentName) {
+      useAzure = true;
+      effectiveEndpoint = azureEndpoint;
+      effectiveApiKey = azureApiKey;
+      effectiveDeploymentName = azureDeploymentName;
+      console.log('Using Azure OpenAI configuration');
+    } else if (openaiApiKey) {
+      effectiveEndpoint = 'https://api.openai.com/v1';
+      effectiveApiKey = openaiApiKey;
+      effectiveDeploymentName = 'gpt-4o';
+      console.log('Using OpenAI configuration');
+    } else {
+      throw new Error('No OpenAI configuration found. Required: OPENAI_API_KEY or Azure OpenAI configuration');
     }
 
-    console.log('Azure OpenAI configuration loaded successfully');
-
-    const formData = await req.formData();
-    const files = formData.getAll('files') as File[];
+    // Handle both JSON body and FormData
+    let files: { data: Uint8Array, name: string, type: string }[] = [];
     
-    if (!files || files.length === 0) {
+    const contentType = req.headers.get('content-type') || '';
+    
+    if (contentType.includes('application/json')) {
+      // JSON body with base64 file data
+      const body = await req.json();
+      
+      if (body.fileData && body.fileName) {
+        // Single file from base64
+        const binaryString = atob(body.fileData);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        files.push({
+          data: bytes,
+          name: body.fileName,
+          type: body.mimeType || 'application/pdf'
+        });
+      } else {
+        throw new Error('Invalid JSON body: missing fileData or fileName');
+      }
+    } else if (contentType.includes('multipart/form-data')) {
+      // FormData with files
+      const formData = await req.formData();
+      const uploadedFiles = formData.getAll('files') as File[];
+      
+      for (const file of uploadedFiles) {
+        const arrayBuffer = await file.arrayBuffer();
+        files.push({
+          data: new Uint8Array(arrayBuffer),
+          name: file.name,
+          type: file.type
+        });
+      }
+    } else {
+      throw new Error('Unsupported content type. Use application/json or multipart/form-data');
+    }
+    
+    if (files.length === 0) {
       throw new Error('No files provided');
     }
 
-    console.log(`Processing ${files.length} files with Azure OpenAI`);
+    console.log(`Processing ${files.length} files with ${useAzure ? 'Azure OpenAI' : 'OpenAI'}`);
 
-    const processor = new DocumentProcessor(azureEndpoint, azureApiKey, azureDeploymentName, googleApiKey);
+    const processor = new DocumentProcessorWithOpenAI(effectiveEndpoint, effectiveApiKey, effectiveDeploymentName, googleApiKey, useAzure);
     
     const results: ProcessedDocument[] = [];
     
     for (const file of files) {
       console.log(`Processing file: ${file.name}, type: ${file.type}`);
-      
-      const arrayBuffer = await file.arrayBuffer();
-      const fileData = new Uint8Array(arrayBuffer);
-      
-      const result = await processor.processFile(fileData, file.name, file.type);
+      const result = await processor.processFile(file.data, file.name, file.type);
       results.push(result);
     }
     
@@ -616,7 +693,10 @@ serve(async (req) => {
     
     console.log(`Processing completed: ${successCount} success, ${errorCount} errors`);
 
-    return new Response(JSON.stringify(results), {
+    // Return single result if only one file, array otherwise
+    const response = files.length === 1 ? results[0] : results;
+
+    return new Response(JSON.stringify(response), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 

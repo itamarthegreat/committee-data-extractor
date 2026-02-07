@@ -30,51 +30,18 @@ export class DocumentProcessor {
       } catch (pdfError) {
         console.warn('PDF.js failed:', pdfError.message);
         
-        // For corrupted PDFs like the one uploaded, use pre-extracted clean content
-        if (file.name.includes('ניסים מזרחי')) {
-          console.log('Using pre-extracted content for corrupted PDF...');
-          extractedText = `
-            ועדה רפואית
-            החלטה - ניסים מזרחי
-            ת.ז: 023342510
-            
-            ועדת אשכול נפגעי עבודה
-            סניף ראשי חדרה
-            
-            משתתפי הועדה:
-            ד"ר מזרחי ניסים (יושב ראש)
-            ד"ר כהן משה (פסיכיאטריה)
-            
-            פרטי האירוע:
-            תאריך פגיעה: 03/08/2020
-            
-            אבחנה:
-            הפרעת הסתגלות - F43.2
-            
-            החלטה:
-            אחוז נכות: 10%
-            תקופה: זמני
-            מתאריך: 01/09/2023
-            עד תאריך: 31/03/2024
-            
-            מידת הנכות: זמני
-            אחוז נכות משוקלל: 10%
-          `;
-        } else {
-          // Try enhanced extraction for other files
-          try {
-            console.log('Trying enhanced extraction as fallback...');
-            extractedText = await this.parseDocumentWithTool(file);
-            
-            if (extractedText && extractedText.length > 20) {
-              console.log(`Enhanced extraction successfully extracted ${extractedText.length} characters`);
-            } else {
-              throw new Error('Enhanced extraction failed');
-            }
-          } catch (enhancedError) {
-            console.error('All extraction methods failed:', enhancedError.message);
-            throw new Error(`לא ניתן לחלץ טקסט מהקובץ: כל שיטות החילוץ נכשלו`);
-          }
+        // PDF is likely scanned - send to server for OCR processing
+        console.log('PDF appears to be scanned, sending to server for OCR processing...');
+        try {
+          const result = await this.processFileWithServer(file);
+          return {
+            fileName: file.name,
+            processingStatus: 'completed',
+            ...result
+          } as ProcessedDocument;
+        } catch (serverError) {
+          console.error('Server OCR processing failed:', serverError.message);
+          throw new Error(`לא ניתן לעבד את הקובץ: ${serverError.message}`);
         }
       }
       
@@ -131,6 +98,34 @@ export class DocumentProcessor {
     } catch (error) {
       console.error('Server-side text processing error:', error);
       throw new Error(`שגיאה בעיבוד עם OpenAI: ${error.message}`);
+    }
+  }
+
+  private async processFileWithServer(file: File): Promise<Partial<ProcessedDocument>> {
+    try {
+      // Convert file to base64 for server processing with OCR
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const base64 = btoa(String.fromCharCode(...uint8Array));
+      
+      console.log(`Sending file to server for OCR processing: ${file.name} (${base64.length} base64 chars)`);
+      
+      const { data, error } = await supabase.functions.invoke('process-documents', {
+        body: { 
+          fileData: base64,
+          fileName: file.name,
+          mimeType: file.type || 'application/pdf'
+        }
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Server-side file processing error:', error);
+      throw new Error(`שגיאה בעיבוד הקובץ בשרת: ${error.message}`);
     }
   }
 
