@@ -631,17 +631,24 @@ serve(async (req) => {
       throw new Error('No OpenAI configuration found. Required: OPENAI_API_KEY or Azure OpenAI configuration');
     }
 
-    // Handle both JSON body and FormData
+    // Handle both JSON body and FormData - read body as text first to handle parsing correctly
     let files: { data: Uint8Array, name: string, type: string }[] = [];
     
     const contentType = req.headers.get('content-type') || '';
+    console.log('Request content-type:', contentType);
     
-    if (contentType.includes('application/json')) {
-      // JSON body with base64 file data
-      const body = await req.json();
+    // Try JSON parsing first since that's what supabase.functions.invoke sends
+    const rawBody = await req.text();
+    console.log('Raw body length:', rawBody.length);
+    
+    try {
+      // Attempt to parse as JSON
+      const body = JSON.parse(rawBody);
+      console.log('Parsed JSON body, keys:', Object.keys(body));
       
       if (body.fileData && body.fileName) {
         // Single file from base64
+        console.log('Processing base64 file data...');
         const binaryString = atob(body.fileData);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
@@ -652,24 +659,19 @@ serve(async (req) => {
           name: body.fileName,
           type: body.mimeType || 'application/pdf'
         });
+        console.log(`File converted: ${body.fileName}, ${bytes.length} bytes`);
       } else {
         throw new Error('Invalid JSON body: missing fileData or fileName');
       }
-    } else if (contentType.includes('multipart/form-data')) {
-      // FormData with files
-      const formData = await req.formData();
-      const uploadedFiles = formData.getAll('files') as File[];
+    } catch (jsonError) {
+      console.log('JSON parsing failed, trying form-data fallback:', jsonError.message);
       
-      for (const file of uploadedFiles) {
-        const arrayBuffer = await file.arrayBuffer();
-        files.push({
-          data: new Uint8Array(arrayBuffer),
-          name: file.name,
-          type: file.type
-        });
+      // If JSON parsing fails and we have multipart/form-data content-type, inform user
+      if (contentType.includes('multipart/form-data')) {
+        throw new Error('Form-data uploads not supported via this method. Please send JSON with base64 fileData.');
       }
-    } else {
-      throw new Error('Unsupported content type. Use application/json or multipart/form-data');
+      
+      throw new Error(`Could not parse request body: ${jsonError.message}`);
     }
     
     if (files.length === 0) {
@@ -703,7 +705,8 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in process-documents function:', error);
     return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
+      processingStatus: 'error'
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
