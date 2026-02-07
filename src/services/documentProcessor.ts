@@ -105,8 +105,7 @@ export class DocumentProcessor {
     try {
       // Convert file to base64 for server processing with OCR
       const arrayBuffer = await file.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      const base64 = btoa(String.fromCharCode(...uint8Array));
+      const base64 = await this.arrayBufferToBase64(arrayBuffer);
       
       console.log(`Sending file to server for OCR processing: ${file.name} (${base64.length} base64 chars)`);
       
@@ -127,6 +126,21 @@ export class DocumentProcessor {
       console.error('Server-side file processing error:', error);
       throw new Error(`שגיאה בעיבוד הקובץ בשרת: ${error.message}`);
     }
+  }
+
+  private arrayBufferToBase64(buffer: ArrayBuffer): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const blob = new Blob([buffer]);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = reader.result as string;
+        // Remove the data URL prefix (e.g., "data:application/pdf;base64,")
+        const base64 = dataUrl.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
   }
 
   private async extractPdfTextWithPdfJs(file: File): Promise<string> {
